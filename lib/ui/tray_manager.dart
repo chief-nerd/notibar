@@ -5,14 +5,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../bloc/notibar_bloc.dart';
 import '../bloc/notibar_state.dart';
 import '../bloc/notibar_event.dart';
-import '../plugins/plugin_interface.dart';
 
 class TrayManager {
   final SystemTray _systemTray = SystemTray();
   final Menu _menu = Menu();
   final NotibarBloc bloc;
   StreamSubscription? _subscription;
-  
+
   // Constant limits
   static const int _maxItemsPerAccount = 7;
 
@@ -21,7 +20,8 @@ class TrayManager {
   Future<void> init() async {
     await _systemTray.initSystemTray(
       title: "Notibar",
-      iconPath: "assets/app_icon.png", // In a real app, use multi-resolution/theme icons
+      iconPath:
+          "assets/app_icon.png", // In a real app, use multi-resolution/theme icons
     );
 
     _systemTray.registerSystemTrayEventHandler((eventName) {
@@ -44,7 +44,7 @@ class TrayManager {
   Future<void> _updateTray(NotibarLoaded state) async {
     int totalUnread = 0;
     int totalFlagged = 0;
-    
+
     for (var summary in state.summariesByAccountId.values) {
       totalUnread += summary.unreadCount;
       totalFlagged += summary.flaggedCount;
@@ -55,7 +55,10 @@ class TrayManager {
 
     // Efficiently build menu items
     final List<MenuItemBase> menuItems = [
-      MenuItemLabel(label: 'Refresh All', onClicked: (_) => bloc.add(RefreshAll())),
+      MenuItemLabel(
+        label: 'Refresh All',
+        onClicked: (_) => bloc.add(RefreshAll()),
+      ),
       MenuSeparator(),
     ];
 
@@ -63,40 +66,52 @@ class TrayManager {
       final summary = state.summariesByAccountId[account.id];
       if (summary == null) continue;
 
-      final accountLabel = summary.error != null 
-          ? "${account.name} (⚠️ Error)" 
+      final accountLabel = summary.error != null
+          ? "${account.name} (⚠️ Error)"
           : account.name;
-          
+
       menuItems.add(MenuItemLabel(label: accountLabel, enabled: false));
-      
+
       if (summary.error != null) {
-        menuItems.add(MenuItemLabel(label: "  Error: ${summary.error!.message}", enabled: false));
+        menuItems.add(
+          MenuItemLabel(
+            label: "  Error: ${summary.error!.message}",
+            enabled: false,
+          ),
+        );
       } else if (summary.items.isEmpty) {
-        menuItems.add(MenuItemLabel(label: "  No notifications", enabled: false));
+        menuItems.add(
+          MenuItemLabel(label: "  No notifications", enabled: false),
+        );
       } else {
         // Limit items to prevent massive menus
         final itemsToShow = summary.items.take(_maxItemsPerAccount).toList();
         for (var item in itemsToShow) {
           final prefix = item.isUnread ? "• " : "  ";
           final flaggedIcon = item.isFlagged ? "🚩 " : "";
-          
+
           // Truncate title if too long
           String title = item.title;
           if (title.length > 40) {
             title = "${title.substring(0, 37)}...";
           }
 
-          menuItems.add(MenuItemLabel(
-            label: "$prefix$flaggedIcon$title (${item.subtitle})",
-            onClicked: (_) => _launchUrl(item.actionUrl),
-          ));
+          menuItems.add(
+            MenuItemLabel(
+              label: "$prefix$flaggedIcon$title (${item.subtitle})",
+              onClicked: (_) => _launchUrl(item.actionUrl),
+            ),
+          );
         }
-        
+
         if (summary.items.length > _maxItemsPerAccount) {
-          menuItems.add(MenuItemLabel(
-            label: "  ... and ${summary.items.length - _maxItemsPerAccount} more",
-            enabled: false,
-          ));
+          menuItems.add(
+            MenuItemLabel(
+              label:
+                  "  ... and ${summary.items.length - _maxItemsPerAccount} more",
+              enabled: false,
+            ),
+          );
         }
       }
       menuItems.add(MenuSeparator());
