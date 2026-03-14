@@ -1,0 +1,30 @@
+// **************************************************************************
+// JsonSerializableGenerator
+// **************************************************************************
+
+Account _$AccountFromJson(Map<String, dynamic> json) => Account(
+  id: json['id'] as String,
+  name: json['name'] as String,
+  serviceType: $enumDecode(_$ServiceTypeEnumMap, json['serviceType']),
+  endpoint: json['endpoint'] as String?,
+  apiKey: json['apiKey'] as String?,
+  pollingInterval: json['pollingInterval'] == null
+      ? const Duration(minutes: 5)
+      : const DurationConverter().fromJson(
+          (json['pollingInterval'] as num).toInt(),
+        ),
+);
+
+Map<String, dynamic> _$AccountToJson(Account instance) => <String, dynamic>{
+  'id': instance.id,
+  'name': instance.name,
+  'serviceType': _$ServiceTypeEnumMap[instance.serviceType]!,
+  'endpoint': instance.endpoint,
+  'apiKey': instance.apiKey,
+  'pollingInterval': const DurationConverter().toJson(instance.pollingInterval),
+};
+
+const _$ServiceTypeEnumMap = {
+  ServiceType.outlook: 'outlook',
+  ServiceType.custom: 'custom',
+};
