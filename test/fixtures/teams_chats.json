@@ -1,0 +1,10 @@
+{
+  "value": [
+    {
+      "id": "chat1",
+      "topic": "Project Alpha",
+      "lastMessagePreview": { "body": { "content": "Hello world!" } },
+      "lastUpdatedDateTime": "2023-10-27T13:00:00Z"
+    }
+  ]
+}

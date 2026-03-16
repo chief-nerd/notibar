@@ -10,6 +10,12 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    // Register our custom multi-status-item plugin
+    NSLog("[MainFlutterWindow] About to register MultiStatusItemPlugin")
+    let registrar = flutterViewController.registrar(forPlugin: "MultiStatusItemPlugin")
+    MultiStatusItemPlugin.register(with: registrar)
+    NSLog("[MainFlutterWindow] MultiStatusItemPlugin registered")
+
     super.awakeFromNib()
   }
 }

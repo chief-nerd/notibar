@@ -1,0 +1,13 @@
+{
+  "value": [
+    {
+      "id": "msg1",
+      "subject": "Lunch?",
+      "from": { "emailAddress": { "name": "Alice" } },
+      "receivedDateTime": "2023-10-27T14:00:00Z",
+      "webLink": "https://outlook.com/msg1",
+      "isRead": false,
+      "flag": { "flagStatus": "flagged" }
+    }
+  ]
+}

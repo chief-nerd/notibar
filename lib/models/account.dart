@@ -3,7 +3,7 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'account.g.dart';
 
-enum ServiceType { outlook, custom }
+enum ServiceType { outlook, github, jira, slack, teams, frappe, mattermost, custom }
 
 @JsonSerializable()
 class Account extends Equatable {
@@ -12,7 +12,10 @@ class Account extends Equatable {
   final ServiceType serviceType;
   final String? endpoint;
   final String? apiKey;
-  
+  final Map<String, String> config;
+
+  final DateTime? lastRefreshTime;
+
   @DurationConverter()
   final Duration pollingInterval;
 
@@ -22,14 +25,48 @@ class Account extends Equatable {
     required this.serviceType,
     this.endpoint,
     this.apiKey,
+    this.config = const {},
+    this.lastRefreshTime,
     this.pollingInterval = const Duration(minutes: 5),
   });
 
-  factory Account.fromJson(Map<String, dynamic> json) => _$AccountFromJson(json);
+  factory Account.fromJson(Map<String, dynamic> json) =>
+      _$AccountFromJson(json);
   Map<String, dynamic> toJson() => _$AccountToJson(this);
 
+  Account copyWith({
+    String? id,
+    String? name,
+    ServiceType? serviceType,
+    String? endpoint,
+    String? apiKey,
+    Map<String, String>? config,
+    DateTime? lastRefreshTime,
+    Duration? pollingInterval,
+  }) {
+    return Account(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      serviceType: serviceType ?? this.serviceType,
+      endpoint: endpoint ?? this.endpoint,
+      apiKey: apiKey ?? this.apiKey,
+      config: config ?? this.config,
+      lastRefreshTime: lastRefreshTime ?? this.lastRefreshTime,
+      pollingInterval: pollingInterval ?? this.pollingInterval,
+    );
+  }
+
   @override
-  List<Object?> get props => [id, name, serviceType, endpoint, apiKey, pollingInterval];
+  List<Object?> get props => [
+    id,
+    name,
+    serviceType,
+    endpoint,
+    apiKey,
+    config,
+    lastRefreshTime,
+    pollingInterval,
+  ];
 }
 
 class DurationConverter implements JsonConverter<Duration, int> {

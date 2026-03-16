@@ -9,6 +9,7 @@ class NotificationItem extends Equatable {
   final String actionUrl;
   final bool isUnread;
   final bool isFlagged;
+  final Map<String, dynamic> metadata;
 
   const NotificationItem({
     required this.id,
@@ -19,8 +20,19 @@ class NotificationItem extends Equatable {
     required this.actionUrl,
     this.isUnread = false,
     this.isFlagged = false,
+    this.metadata = const {},
   });
 
   @override
-  List<Object?> get props => [id, title, subtitle, body, timestamp, actionUrl, isUnread, isFlagged];
+  List<Object?> get props => [
+    id, 
+    title, 
+    subtitle, 
+    body, 
+    timestamp, 
+    actionUrl, 
+    isUnread, 
+    isFlagged, 
+    metadata,
+  ];
 }

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "123",
+    "unread": true,
+    "reason": "mention",
+    "updated_at": "2023-10-27T10:00:00Z",
+    "subject": {
+      "title": "Fix bug",
+      "url": "https://api.github.com/repos/owner/repo/pulls/1",
+      "type": "PullRequest"
+    },
+    "repository": {
+      "full_name": "owner/repo",
+      "html_url": "https://github.com/owner/repo"
+    }
+  },
+  {
+    "id": "124",
+    "unread": false,
+    "reason": "assign",
+    "updated_at": "2023-10-27T09:00:00Z",
+    "subject": {
+      "title": "Old issue",
+      "url": "https://api.github.com/repos/owner/repo/issues/2",
+      "type": "Issue"
+    },
+    "repository": {
+      "full_name": "owner/repo",
+      "html_url": "https://github.com/owner/repo"
+    }
+  }
+]

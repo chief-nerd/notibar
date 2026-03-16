@@ -1,0 +1,1223 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import '../bloc/notibar_bloc.dart';
+import '../bloc/notibar_event.dart';
+import '../bloc/notibar_state.dart';
+import '../models/account.dart';
+import '../models/notification_option.dart';
+import '../services/outlook_auth_service.dart';
+import '../plugins/plugin_interface.dart';
+
+// ─── Helpers ──────────────────────────────────────────────────────
+
+String serviceLabel(ServiceType type) {
+  switch (type) {
+    case ServiceType.outlook:
+      return 'Office 365 (Outlook)';
+    case ServiceType.github:
+      return 'GitHub';
+    case ServiceType.jira:
+      return 'Jira';
+    case ServiceType.slack:
+      return 'Slack';
+    case ServiceType.teams:
+      return 'Microsoft Teams';
+    case ServiceType.frappe:
+      return 'Frappe / ERPNext';
+    case ServiceType.mattermost:
+      return 'Mattermost';
+    case ServiceType.custom:
+      return 'Custom';
+  }
+}
+
+IconData serviceIcon(ServiceType type) {
+  switch (type) {
+    case ServiceType.outlook:
+      return Icons.mail;
+    case ServiceType.github:
+      return Icons.code;
+    case ServiceType.jira:
+      return Icons.bug_report;
+    case ServiceType.slack:
+      return Icons.chat;
+    case ServiceType.teams:
+      return Icons.group;
+    case ServiceType.frappe:
+      return Icons.task_alt;
+    case ServiceType.mattermost:
+      return Icons.forum;
+    case ServiceType.custom:
+      return Icons.notifications;
+  }
+}
+
+String metricLabel(DisplayMetric metric) {
+  switch (metric) {
+    case DisplayMetric.unread:
+      return 'Unread';
+    case DisplayMetric.flagged:
+      return 'Flagged';
+    case DisplayMetric.mentions:
+      return 'Mentions';
+    case DisplayMetric.assignedIssues:
+      return 'Assigned Issues';
+    case DisplayMetric.assignedPRs:
+      return 'Assigned PRs';
+    case DisplayMetric.reviewRequests:
+      return 'Review Requests';
+    case DisplayMetric.all:
+      return 'All';
+  }
+}
+
+IconData metricIcon(DisplayMetric metric) {
+  switch (metric) {
+    case DisplayMetric.unread:
+      return Icons.mark_email_unread_outlined;
+    case DisplayMetric.flagged:
+      return Icons.flag_outlined;
+    case DisplayMetric.mentions:
+      return Icons.alternate_email;
+    case DisplayMetric.assignedIssues:
+      return Icons.assignment_ind_outlined;
+    case DisplayMetric.assignedPRs:
+      return Icons.merge_type;
+    case DisplayMetric.reviewRequests:
+      return Icons.rate_review_outlined;
+    case DisplayMetric.all:
+      return Icons.all_inbox;
+  }
+}
+
+List<DisplayMetric> supportedMetrics(ServiceType type) {
+  switch (type) {
+    case ServiceType.outlook:
+      return [DisplayMetric.unread, DisplayMetric.flagged, DisplayMetric.all];
+    case ServiceType.jira:
+      return [
+        DisplayMetric.assignedIssues,
+        DisplayMetric.flagged,
+        DisplayMetric.all,
+      ];
+    case ServiceType.github:
+      return [
+        DisplayMetric
+            .unread, // "Todos" in user terminology (unread notifications)
+        DisplayMetric.assignedIssues,
+        DisplayMetric.assignedPRs,
+        DisplayMetric.reviewRequests,
+        DisplayMetric.mentions,
+        DisplayMetric.all,
+      ];
+    case ServiceType.slack:
+    case ServiceType.teams:
+    case ServiceType.mattermost:
+      return [DisplayMetric.unread, DisplayMetric.mentions];
+    case ServiceType.frappe:
+      return [DisplayMetric.unread, DisplayMetric.flagged];
+    case ServiceType.custom:
+      return [DisplayMetric.unread, DisplayMetric.flagged, DisplayMetric.all];
+  }
+}
+
+Map<String, String> serviceConfigFields(ServiceType type) {
+  switch (type) {
+    case ServiceType.outlook:
+    case ServiceType.teams:
+      return {
+        'clientId': 'Azure App Client ID',
+        'tenantId': 'Tenant ID (or "common")',
+      };
+    case ServiceType.github:
+      return {'owner': 'Repository Owner', 'repo': 'Repository Name'};
+    case ServiceType.jira:
+      return {'baseUrl': 'Jira Base URL', 'projectKey': 'Project Key'};
+    case ServiceType.slack:
+      return {'workspace': 'Workspace Name'};
+    case ServiceType.frappe:
+      return {'baseUrl': 'Frappe Base URL'};
+    case ServiceType.mattermost:
+      return {'baseUrl': 'Mattermost Base URL'};
+    case ServiceType.custom:
+      return {'baseUrl': 'API Base URL'};
+  }
+}
+
+// ─── Main Settings Window ─────────────────────────────────────────
+
+class SettingsWindow extends StatefulWidget {
+  const SettingsWindow({super.key});
+
+  @override
+  State<SettingsWindow> createState() => _SettingsWindowState();
+}
+
+class _SettingsWindowState extends State<SettingsWindow>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      body: Column(
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.notifications_active,
+                  color: colorScheme.primary,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Notibar Settings',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Tabs
+          TabBar(
+            controller: _tabController,
+            tabs: const [
+              Tab(icon: Icon(Icons.view_list), text: 'Notifications'),
+              Tab(icon: Icon(Icons.cloud_outlined), text: 'Accounts'),
+            ],
+          ),
+          // Tab content
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: const [_NotificationsTab(), _AccountsTab()],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  NOTIFICATIONS TAB — ordered list of tray items
+// ════════════════════════════════════════════════════════════════════
+
+class _NotificationsTab extends StatelessWidget {
+  const _NotificationsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<NotibarBloc, NotibarState>(
+      builder: (context, state) {
+        if (state is! NotibarLoaded) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        return Column(
+          children: [
+            // Add button
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Row(
+                children: [
+                  Text(
+                    'These items appear in your menu bar, in this order.',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                  ),
+                  const Spacer(),
+                  FilledButton.icon(
+                    onPressed: state.accounts.isEmpty
+                        ? null
+                        : () => _showAddOptionDialog(context, state.accounts),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add'),
+                  ),
+                ],
+              ),
+            ),
+            // Option list
+            Expanded(
+              child: state.options.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.view_list,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            state.accounts.isEmpty
+                                ? 'Add an account first in the Accounts tab'
+                                : 'Add a notification item to show in the tray',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ReorderableListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      buildDefaultDragHandles: false,
+                      itemCount: state.options.length,
+                      proxyDecorator: (child, index, animation) {
+                        return Material(
+                          elevation: 4,
+                          borderRadius: BorderRadius.circular(12),
+                          child: child,
+                        );
+                      },
+                      onReorder: (oldIndex, newIndex) {
+                        context.read<NotibarBloc>().add(
+                          ReorderNotificationOptions(oldIndex, newIndex),
+                        );
+                      },
+                      itemBuilder: (context, index) {
+                        final option = state.options[index];
+                        final account = state.accounts
+                            .where((a) => a.id == option.accountId)
+                            .firstOrNull;
+                        return _OptionCard(
+                          key: ValueKey(option.id),
+                          option: option,
+                          account: account,
+                          index: index,
+                        );
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showAddOptionDialog(BuildContext context, List<Account> accounts) {
+    showDialog(
+      context: context,
+      builder: (_) => BlocProvider.value(
+        value: context.read<NotibarBloc>(),
+        child: _AddOptionDialog(accounts: accounts),
+      ),
+    );
+  }
+}
+
+class _OptionCard extends StatelessWidget {
+  final NotificationOption option;
+  final Account? account;
+  final int index;
+
+  const _OptionCard({
+    super.key,
+    required this.option,
+    this.account,
+    required this.index,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bloc = context.read<NotibarBloc>();
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      elevation: option.enabled ? 1 : 0,
+      color: option.enabled
+          ? null
+          : colorScheme.surfaceContainerHighest.withAlpha(120),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+        child: Row(
+          children: [
+            ReorderableDragStartListener(
+              index: index,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Icon(
+                  Icons.drag_indicator,
+                  color: Colors.grey.shade400,
+                  size: 20,
+                ),
+              ),
+            ),
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: option.enabled
+                    ? colorScheme.primaryContainer
+                    : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                metricIcon(option.metric),
+                color: option.enabled ? colorScheme.primary : Colors.grey,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    account?.name ?? 'Unknown account',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w500,
+                      color: option.enabled ? null : Colors.grey,
+                    ),
+                  ),
+                  Text(
+                    metricLabel(option.metric),
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: option.enabled,
+              onChanged: (_) => bloc.add(ToggleNotificationOption(option.id)),
+            ),
+            IconButton(
+              icon: Icon(
+                Icons.delete_outline,
+                size: 20,
+                color: Colors.red.shade300,
+              ),
+              tooltip: 'Remove',
+              onPressed: () => bloc.add(RemoveNotificationOption(option.id)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AddOptionDialog extends StatefulWidget {
+  final List<Account> accounts;
+  const _AddOptionDialog({required this.accounts});
+
+  @override
+  State<_AddOptionDialog> createState() => _AddOptionDialogState();
+}
+
+class _AddOptionDialogState extends State<_AddOptionDialog> {
+  late String _selectedAccountId;
+  late DisplayMetric _selectedMetric;
+
+  @override
+  void initState() {
+    super.initState();
+    final firstAccount = widget.accounts.first;
+    _selectedAccountId = firstAccount.id;
+    _selectedMetric = supportedMetrics(firstAccount.serviceType).first;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedAccount = widget.accounts.firstWhere(
+      (a) => a.id == _selectedAccountId,
+    );
+    final availableMetrics = supportedMetrics(selectedAccount.serviceType);
+
+    return AlertDialog(
+      title: const Text('Add Notification Item'),
+      content: SizedBox(
+        width: 380,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<String>(
+              initialValue: _selectedAccountId,
+              decoration: const InputDecoration(
+                labelText: 'Account',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.cloud_outlined),
+              ),
+              items: widget.accounts.map((a) {
+                return DropdownMenuItem(
+                  value: a.id,
+                  child: Row(
+                    children: [
+                      Icon(serviceIcon(a.serviceType), size: 18),
+                      const SizedBox(width: 8),
+                      Text(a.name),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (v) {
+                if (v != null) {
+                  setState(() {
+                    _selectedAccountId = v;
+                    final newAccount = widget.accounts.firstWhere(
+                      (a) => a.id == v,
+                    );
+                    final newMetrics = supportedMetrics(newAccount.serviceType);
+                    if (!newMetrics.contains(_selectedMetric)) {
+                      _selectedMetric = newMetrics.first;
+                    }
+                  });
+                }
+              },
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<DisplayMetric>(
+              value: _selectedMetric,
+              decoration: const InputDecoration(
+                labelText: 'What to show',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.visibility_outlined),
+              ),
+              items: availableMetrics.map((m) {
+                return DropdownMenuItem(
+                  value: m,
+                  child: Row(
+                    children: [
+                      Icon(metricIcon(m), size: 18),
+                      const SizedBox(width: 8),
+                      Text(metricLabel(m)),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (v) {
+                if (v != null) {
+                  setState(() {
+                    _selectedMetric = v;
+                  });
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final account = widget.accounts.firstWhere(
+              (a) => a.id == _selectedAccountId,
+            );
+            final label = '${account.name} — ${metricLabel(_selectedMetric)}';
+            final option = NotificationOption(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              accountId: _selectedAccountId,
+              label: label,
+              metric: _selectedMetric,
+            );
+            context.read<NotibarBloc>().add(AddNotificationOption(option));
+            Navigator.pop(context);
+          },
+          child: const Text('Add'),
+        ),
+      ],
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  ACCOUNTS TAB — connection/auth setup
+// ════════════════════════════════════════════════════════════════════
+
+class _AccountsTab extends StatelessWidget {
+  const _AccountsTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<NotibarBloc, NotibarState>(
+      builder: (context, state) {
+        if (state is! NotibarLoaded) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Row(
+                children: [
+                  Text(
+                    'Connections to external services.',
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.grey),
+                  ),
+                  const Spacer(),
+                  FilledButton.icon(
+                    onPressed: () => _showAddAccountDialog(context),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add'),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: state.accounts.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.cloud_off,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No accounts yet',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      itemCount: state.accounts.length,
+                      itemBuilder: (context, index) {
+                        final account = state.accounts[index];
+                        final error =
+                            state.summariesByAccountId[account.id]?.error;
+                        return _AccountCard(account: account, error: error);
+                      },
+                    ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showAddAccountDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => BlocProvider.value(
+        value: context.read<NotibarBloc>(),
+        child: const _AddAccountDialog(),
+      ),
+    );
+  }
+}
+
+class _AccountCard extends StatelessWidget {
+  final Account account;
+  final PluginError? error;
+
+  const _AccountCard({required this.account, this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final hasToken = account.apiKey != null && account.apiKey!.isNotEmpty;
+    final isConfigured = _isServiceConfigured(account);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                serviceIcon(account.serviceType),
+                color: colorScheme.primary,
+                size: 18,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    account.name,
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  const SizedBox(height: 2),
+                  _AccountStatusRow(
+                    serviceType: account.serviceType,
+                    hasToken: hasToken,
+                    isConfigured: isConfigured,
+                    error: error,
+                  ),
+                ],
+              ),
+            ),
+            if ((account.serviceType == ServiceType.outlook ||
+                    account.serviceType == ServiceType.teams) &&
+                isConfigured)
+              _LoginButton(account: account, hasToken: hasToken),
+            IconButton(
+              icon: const Icon(Icons.settings_outlined, size: 20),
+              tooltip: 'Configure',
+              onPressed: () => _showEditDialog(context),
+            ),
+            IconButton(
+              icon: Icon(
+                Icons.delete_outline,
+                size: 20,
+                color: Colors.red.shade300,
+              ),
+              tooltip: 'Remove',
+              onPressed: () => _confirmDelete(context),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _isServiceConfigured(Account account) {
+    final requiredKeys = serviceConfigFields(account.serviceType).keys;
+    return requiredKeys.every(
+      (key) => account.config[key] != null && account.config[key]!.isNotEmpty,
+    );
+  }
+
+  void _showEditDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => BlocProvider.value(
+        value: context.read<NotibarBloc>(),
+        child: _EditAccountDialog(account: account),
+      ),
+    );
+  }
+
+  void _confirmDelete(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove Account'),
+        content: Text(
+          'Remove "${account.name}" and all its notification items?\nThis cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              context.read<NotibarBloc>().add(RemoveAccount(account.id));
+              Navigator.pop(ctx);
+            },
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AccountStatusRow extends StatelessWidget {
+  final ServiceType serviceType;
+  final bool hasToken;
+  final bool isConfigured;
+  final PluginError? error;
+
+  const _AccountStatusRow({
+    required this.serviceType,
+    required this.hasToken,
+    required this.isConfigured,
+    this.error,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = <Widget>[
+      _Chip(label: serviceLabel(serviceType), color: Colors.blueGrey),
+    ];
+
+    if (!isConfigured) {
+      chips.add(const _Chip(label: 'Needs setup', color: Colors.orange));
+    } else if (!hasToken) {
+      chips.add(const _Chip(label: 'Not signed in', color: Colors.orange));
+    } else if (error != null) {
+      chips.add(const _Chip(label: 'Error', color: Colors.red));
+      chips.add(_Chip(label: error!.message, color: Colors.red));
+    } else {
+      chips.add(const _Chip(label: 'Connected', color: Colors.green));
+    }
+
+    return Wrap(spacing: 4, runSpacing: 4, children: chips);
+  }
+}
+
+class _Chip extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _Chip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withAlpha(25),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withAlpha(60)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          color: color,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+}
+
+class _LoginButton extends StatelessWidget {
+  final Account account;
+  final bool hasToken;
+
+  const _LoginButton({required this.account, required this.hasToken});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      icon: Icon(
+        hasToken ? Icons.check_circle_outline : Icons.login,
+        size: 16,
+        color: hasToken ? Colors.green : null,
+      ),
+      label: Text(
+        hasToken ? 'Signed in' : 'Sign in',
+        style: const TextStyle(fontSize: 12),
+      ),
+      onPressed: () => _loginMicrosoft(context),
+    );
+  }
+
+  Future<void> _loginMicrosoft(BuildContext context) async {
+    final bloc = context.read<NotibarBloc>();
+
+    final clientId = account.config['clientId'];
+    if (clientId == null || clientId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configure Client ID first')),
+      );
+      return;
+    }
+
+    final label = serviceLabel(account.serviceType);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Opening browser for $label login...')),
+    );
+
+    final authService = OutlookAuthService(
+      clientId: clientId,
+      tenantId: account.config['tenantId'] ?? 'common',
+    );
+    final token = await authService.login();
+
+    if (!context.mounted) return;
+
+    if (token != null) {
+      bloc.add(UpdateAccountToken(account.id, token));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Successfully signed in!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Login cancelled or failed'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+}
+
+// ─── Add Account Dialog ──────────────────────────────────────────
+
+class _AddAccountDialog extends StatefulWidget {
+  const _AddAccountDialog();
+
+  @override
+  State<_AddAccountDialog> createState() => _AddAccountDialogState();
+}
+
+class _AddAccountDialogState extends State<_AddAccountDialog> {
+  final _nameController = TextEditingController();
+  final _apiKeyController = TextEditingController();
+  ServiceType _selectedType = ServiceType.outlook;
+  final Map<String, TextEditingController> _configControllers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController.text = serviceLabel(_selectedType);
+    _rebuildConfigControllers();
+  }
+
+  void _rebuildConfigControllers() {
+    for (final c in _configControllers.values) {
+      c.dispose();
+    }
+    _configControllers.clear();
+    for (final key in serviceConfigFields(_selectedType).keys) {
+      _configControllers[key] = TextEditingController();
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _apiKeyController.dispose();
+    for (final c in _configControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = serviceConfigFields(_selectedType);
+
+    return AlertDialog(
+      title: const Text('Add Account'),
+      content: SizedBox(
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<ServiceType>(
+                initialValue: _selectedType,
+                decoration: const InputDecoration(
+                  labelText: 'Service',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.cloud_outlined),
+                ),
+                items: ServiceType.values.map((type) {
+                  return DropdownMenuItem(
+                    value: type,
+                    child: Row(
+                      children: [
+                        Icon(serviceIcon(type), size: 18),
+                        const SizedBox(width: 8),
+                        Text(serviceLabel(type)),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() {
+                      _selectedType = value;
+                      _nameController.text = serviceLabel(value);
+                      _rebuildConfigControllers();
+                    });
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Display Name',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.label_outline),
+                ),
+              ),
+              if (_selectedType != ServiceType.outlook &&
+                  _selectedType != ServiceType.teams) ...[
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _apiKeyController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'API Key / Token',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.vpn_key_outlined),
+                  ),
+                ),
+              ],
+              if (fields.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Service Configuration',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...fields.entries.map((entry) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextField(
+                      controller: _configControllers[entry.key],
+                      decoration: InputDecoration(
+                        labelText: entry.value,
+                        border: const OutlineInputBorder(),
+                        hintText: _hintForKey(entry.key),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _submit, child: const Text('Add')),
+      ],
+    );
+  }
+
+  String? _hintForKey(String key) {
+    switch (key) {
+      case 'clientId':
+        return 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx';
+      case 'tenantId':
+        return 'common';
+      case 'baseUrl':
+        return 'https://...';
+      case 'frappe':
+        return 'api_key:api_secret';
+      default:
+        return null;
+    }
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
+
+    final config = <String, String>{};
+    for (final entry in _configControllers.entries) {
+      final v = entry.value.text.trim();
+      if (v.isNotEmpty) config[entry.key] = v;
+    }
+
+    final account = Account(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: name,
+      serviceType: _selectedType,
+      config: config,
+      apiKey: _apiKeyController.text.trim().isNotEmpty
+          ? _apiKeyController.text.trim()
+          : null,
+    );
+    context.read<NotibarBloc>().add(AddAccount(account));
+    Navigator.pop(context);
+  }
+}
+
+// ─── Edit Account Dialog ──────────────────────────────────────────
+
+class _EditAccountDialog extends StatefulWidget {
+  final Account account;
+  const _EditAccountDialog({required this.account});
+
+  @override
+  State<_EditAccountDialog> createState() => _EditAccountDialogState();
+}
+
+class _EditAccountDialogState extends State<_EditAccountDialog> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _endpointController;
+  late final TextEditingController _apiKeyController;
+  late final Map<String, TextEditingController> _configControllers;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.account.name);
+    _endpointController = TextEditingController(
+      text: widget.account.endpoint ?? '',
+    );
+    _apiKeyController = TextEditingController(
+      text: widget.account.apiKey ?? '',
+    );
+    _configControllers = {};
+    final fields = serviceConfigFields(widget.account.serviceType);
+    for (final key in fields.keys) {
+      _configControllers[key] = TextEditingController(
+        text: widget.account.config[key] ?? '',
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _endpointController.dispose();
+    _apiKeyController.dispose();
+    for (final c in _configControllers.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fields = serviceConfigFields(widget.account.serviceType);
+
+    return AlertDialog(
+      title: Row(
+        children: [
+          Icon(serviceIcon(widget.account.serviceType), size: 22),
+          const SizedBox(width: 8),
+          Text('Edit ${widget.account.name}'),
+        ],
+      ),
+      content: SizedBox(
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Display Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _endpointController,
+                decoration: const InputDecoration(
+                  labelText: 'Custom Endpoint (optional)',
+                  border: OutlineInputBorder(),
+                  hintText: 'Leave empty for default',
+                ),
+              ),
+              if (widget.account.serviceType != ServiceType.outlook &&
+                  widget.account.serviceType != ServiceType.teams) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _apiKeyController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'API Key / Token',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.vpn_key_outlined),
+                  ),
+                ),
+              ],
+              if (fields.isNotEmpty) ...[
+                const SizedBox(height: 20),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Service Configuration',
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...fields.entries.map((entry) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextField(
+                      controller: _configControllers[entry.key],
+                      decoration: InputDecoration(
+                        labelText: entry.value,
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Save')),
+      ],
+    );
+  }
+
+  void _save() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
+
+    final config = <String, String>{};
+    for (final entry in _configControllers.entries) {
+      final v = entry.value.text.trim();
+      if (v.isNotEmpty) config[entry.key] = v;
+    }
+
+    final endpoint = _endpointController.text.trim();
+
+    final updated = widget.account.copyWith(
+      name: name,
+      endpoint: endpoint.isNotEmpty ? endpoint : null,
+      apiKey: _apiKeyController.text.trim().isNotEmpty
+          ? _apiKeyController.text.trim()
+          : null,
+      config: config,
+    );
+
+    context.read<NotibarBloc>().add(UpdateAccount(updated));
+    Navigator.pop(context);
+  }
+}

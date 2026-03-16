@@ -1,0 +1,21 @@
+{
+  "ok": true,
+  "channels": [
+    {
+      "id": "C123",
+      "name": "general",
+      "is_channel": true,
+      "unread_count": 5,
+      "unread_count_display": 2,
+      "context_team_id": "T123"
+    },
+    {
+      "id": "D123",
+      "name": "alice",
+      "is_im": true,
+      "unread_count": 1,
+      "unread_count_display": 1,
+      "context_team_id": "T123"
+    }
+  ]
+}

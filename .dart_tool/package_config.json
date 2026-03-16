@@ -584,12 +584,6 @@
       "languageVersion": "3.1"
     },
     {
-      "name": "system_tray",
-      "rootUri": "file:///Users/jakob/.pub-cache/hosted/pub.dev/system_tray-2.0.3",
-      "packageUri": "lib/",
-      "languageVersion": "2.12"
-    },
-    {
       "name": "term_glyph",
       "rootUri": "file:///Users/jakob/.pub-cache/hosted/pub.dev/term_glyph-1.2.2",
       "packageUri": "lib/",
@@ -672,12 +666,6 @@
       "rootUri": "file:///Users/jakob/.pub-cache/hosted/pub.dev/url_launcher_windows-3.1.5",
       "packageUri": "lib/",
       "languageVersion": "3.8"
-    },
-    {
-      "name": "uuid",
-      "rootUri": "file:///Users/jakob/.pub-cache/hosted/pub.dev/uuid-3.0.7",
-      "packageUri": "lib/",
-      "languageVersion": "2.12"
     },
     {
       "name": "vector_math",

@@ -1,0 +1,12 @@
+[
+  {
+    "team_id": "team123",
+    "msg_count": 5,
+    "mention_count": 2
+  },
+  {
+    "team_id": "team456",
+    "msg_count": 0,
+    "mention_count": 0
+  }
+]

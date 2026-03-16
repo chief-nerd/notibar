@@ -3,102 +3,338 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/account.dart';
 import '../plugins/plugin_interface.dart';
 import '../plugins/outlook/outlook_plugin.dart';
+import '../plugins/github/github_plugin.dart';
+import '../plugins/jira/jira_plugin.dart';
+import '../plugins/slack/slack_plugin.dart';
+import '../plugins/teams/teams_plugin.dart';
+import '../plugins/frappe/frappe_plugin.dart';
+import '../plugins/mattermost/mattermost_plugin.dart';
 import '../repositories/account_repository.dart';
+import '../repositories/notification_option_repository.dart';
 import 'notibar_event.dart';
 import 'notibar_state.dart';
 
 class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
   final Map<ServiceType, NotibarPlugin> _plugins;
   final AccountRepository _accountRepository;
+  final NotificationOptionRepository _optionRepository;
   final Map<String, Timer> _pollingTimers = {};
 
   NotibarBloc({
     required AccountRepository accountRepository,
+    required NotificationOptionRepository optionRepository,
     Map<ServiceType, NotibarPlugin>? plugins,
-  })  : _accountRepository = accountRepository,
-        _plugins = plugins ?? {ServiceType.outlook: OutlookPlugin()},
-        super(NotibarInitial()) {
+  }) : _accountRepository = accountRepository,
+       _optionRepository = optionRepository,
+       _plugins =
+           plugins ??
+           {
+             ServiceType.outlook: OutlookPlugin(),
+             ServiceType.github: GithubPlugin(),
+             ServiceType.jira: JiraPlugin(),
+             ServiceType.slack: SlackPlugin(),
+             ServiceType.teams: TeamsPlugin(),
+             ServiceType.frappe: FrappePlugin(),
+             ServiceType.mattermost: MattermostPlugin(),
+           },
+       super(NotibarInitial()) {
     on<LoadAccounts>(_onLoadAccounts);
     on<RefreshAll>(_onRefreshAll);
     on<RefreshAccount>(_onRefreshAccount);
+    on<AddAccount>(_onAddAccount);
+    on<RemoveAccount>(_onRemoveAccount);
+    on<UpdateAccountToken>(_onUpdateAccountToken);
+    on<UpdateAccount>(_onUpdateAccount);
+    on<AddNotificationOption>(_onAddOption);
+    on<RemoveNotificationOption>(_onRemoveOption);
+    on<ToggleNotificationOption>(_onToggleOption);
+    on<ReorderNotificationOptions>(_onReorderOptions);
+    on<UpdateNotificationOption>(_onUpdateOption);
   }
 
-  Future<void> _onLoadAccounts(LoadAccounts event, Emitter<NotibarState> emit) async {
+  Future<void> _onLoadAccounts(
+    LoadAccounts event,
+    Emitter<NotibarState> emit,
+  ) async {
     emit(NotibarLoading());
     try {
       final accounts = await _accountRepository.getAccounts();
-      
-      // If no accounts exist, maybe add a default one or just return empty
-      // For this migration, if empty we can't do much without UI for adding
-      // but let's assume accounts are persisted.
+      final options = await _optionRepository.getOptions();
+
+      // Fetch summaries for accounts that have enabled options
+      final activeAccountIds = options
+          .where((o) => o.enabled)
+          .map((o) => o.accountId)
+          .toSet();
 
       final summaries = <String, NotificationSummary>{};
-      for (final account in accounts) {
+      final updatedAccounts = List<Account>.from(accounts);
+      final now = DateTime.now();
+
+      for (var i = 0; i < updatedAccounts.length; i++) {
+        final account = updatedAccounts[i];
+        if (!activeAccountIds.contains(account.id)) continue;
         final plugin = _plugins[account.serviceType];
         if (plugin != null) {
           summaries[account.id] = await plugin.fetchNotifications(account);
+          updatedAccounts[i] = account.copyWith(lastRefreshTime: now);
         } else {
           summaries[account.id] = NotificationSummary.withError(
-            PluginError(type: PluginErrorType.unknown, message: 'Plugin not found for ${account.serviceType}')
+            PluginError(
+              type: PluginErrorType.unknown,
+              message: 'Plugin not found for ${account.serviceType}',
+            ),
           );
         }
       }
 
-      emit(NotibarLoaded(summariesByAccountId: summaries, accounts: accounts));
-      _startPolling(accounts);
+      if (updatedAccounts != accounts) {
+        await _accountRepository.saveAccounts(updatedAccounts);
+      }
+
+      emit(
+        NotibarLoaded(
+          summariesByAccountId: summaries,
+          accounts: updatedAccounts,
+          options: options,
+        ),
+      );
+      _startPolling(updatedAccounts, activeAccountIds);
     } catch (e) {
-      emit(NotibarError('Failed to load accounts: $e'));
+      emit(NotibarError('Failed to load: $e'));
     }
   }
 
-  void _startPolling(List<Account> accounts) {
+  void _startPolling(List<Account> accounts, Set<String> activeAccountIds) {
     for (var timer in _pollingTimers.values) {
       timer.cancel();
     }
     _pollingTimers.clear();
 
+    final now = DateTime.now();
     for (final account in accounts) {
-      _pollingTimers[account.id] = Timer.periodic(account.pollingInterval, (_) {
-        add(RefreshAccount(account.id));
-      });
+      if (!activeAccountIds.contains(account.id)) continue;
+
+      // Calculate when the next poll should happen
+      Duration initialDelay = Duration.zero;
+      if (account.lastRefreshTime != null) {
+        final timeSinceLastRefresh = now.difference(account.lastRefreshTime!);
+        if (timeSinceLastRefresh < account.pollingInterval) {
+          initialDelay = account.pollingInterval - timeSinceLastRefresh;
+        }
+      }
+
+      if (initialDelay == Duration.zero) {
+        // Start periodic timer immediately
+        _pollingTimers[account.id] = Timer.periodic(account.pollingInterval, (
+          _,
+        ) {
+          add(RefreshAccount(account.id));
+        });
+      } else {
+        // Wait for initial delay, then start periodic timer
+        _pollingTimers[account.id] = Timer(initialDelay, () {
+          add(RefreshAccount(account.id));
+          _pollingTimers[account.id] = Timer.periodic(account.pollingInterval, (
+            _,
+          ) {
+            add(RefreshAccount(account.id));
+          });
+        });
+      }
     }
   }
 
-  Future<void> _onRefreshAll(RefreshAll event, Emitter<NotibarState> emit) async {
+  Future<void> _onRefreshAll(
+    RefreshAll event,
+    Emitter<NotibarState> emit,
+  ) async {
     if (state is NotibarLoaded) {
       final currentState = state as NotibarLoaded;
-      final summaries = Map<String, NotificationSummary>.from(currentState.summariesByAccountId);
-      
-      final results = await Future.wait(currentState.accounts.map((account) async {
-        final plugin = _plugins[account.serviceType];
-        if (plugin != null) {
-          return MapEntry(account.id, await plugin.fetchNotifications(account));
-        }
-        return MapEntry(account.id, NotificationSummary.withError(
-          PluginError(type: PluginErrorType.unknown, message: 'Plugin not found')
-        ));
-      }));
+      final summaries = Map<String, NotificationSummary>.from(
+        currentState.summariesByAccountId,
+      );
+      final updatedAccounts = List<Account>.from(currentState.accounts);
+      final now = DateTime.now();
+
+      final results = await Future.wait(
+        currentState.accounts.where((a) => summaries.containsKey(a.id)).map((
+          account,
+        ) async {
+          final plugin = _plugins[account.serviceType];
+          if (plugin != null) {
+            final summary = await plugin.fetchNotifications(account);
+            final idx = updatedAccounts.indexWhere((a) => a.id == account.id);
+            if (idx != -1)
+              updatedAccounts[idx] = account.copyWith(lastRefreshTime: now);
+            return MapEntry(account.id, summary);
+          }
+          return MapEntry(
+            account.id,
+            NotificationSummary.withError(
+              PluginError(
+                type: PluginErrorType.unknown,
+                message: 'Plugin not found',
+              ),
+            ),
+          );
+        }),
+      );
 
       summaries.addEntries(results);
-      emit(NotibarLoaded(summariesByAccountId: summaries, accounts: currentState.accounts));
+      await _accountRepository.saveAccounts(updatedAccounts);
+
+      emit(
+        NotibarLoaded(
+          summariesByAccountId: summaries,
+          accounts: updatedAccounts,
+          options: currentState.options,
+        ),
+      );
     }
   }
 
-  Future<void> _onRefreshAccount(RefreshAccount event, Emitter<NotibarState> emit) async {
-     if (state is NotibarLoaded) {
+  Future<void> _onRefreshAccount(
+    RefreshAccount event,
+    Emitter<NotibarState> emit,
+  ) async {
+    if (state is NotibarLoaded) {
       final currentState = state as NotibarLoaded;
-      final accountIndex = currentState.accounts.indexWhere((a) => a.id == event.accountId);
-      if (accountIndex == -1) return;
+      final account = currentState.accounts
+          .where((a) => a.id == event.accountId)
+          .firstOrNull;
+      if (account == null) return;
 
-      final account = currentState.accounts[accountIndex];
       final plugin = _plugins[account.serviceType];
       if (plugin != null) {
         final summary = await plugin.fetchNotifications(account);
-        final summaries = Map<String, NotificationSummary>.from(currentState.summariesByAccountId);
+        final summaries = Map<String, NotificationSummary>.from(
+          currentState.summariesByAccountId,
+        );
         summaries[account.id] = summary;
-        emit(NotibarLoaded(summariesByAccountId: summaries, accounts: currentState.accounts));
+
+        final updatedAccounts = List<Account>.from(currentState.accounts);
+        final idx = updatedAccounts.indexWhere((a) => a.id == account.id);
+        if (idx != -1) {
+          updatedAccounts[idx] = account.copyWith(
+            lastRefreshTime: DateTime.now(),
+          );
+        }
+        await _accountRepository.saveAccounts(updatedAccounts);
+
+        emit(
+          NotibarLoaded(
+            summariesByAccountId: summaries,
+            accounts: updatedAccounts,
+            options: currentState.options,
+          ),
+        );
       }
     }
+  }
+
+  Future<void> _onAddAccount(
+    AddAccount event,
+    Emitter<NotibarState> emit,
+  ) async {
+    await _accountRepository.addAccount(event.account);
+    add(LoadAccounts());
+  }
+
+  Future<void> _onRemoveAccount(
+    RemoveAccount event,
+    Emitter<NotibarState> emit,
+  ) async {
+    // Also remove all notification options for this account
+    final options = await _optionRepository.getOptions();
+    final updated = options
+        .where((o) => o.accountId != event.accountId)
+        .toList();
+    await _optionRepository.saveOptions(updated);
+    await _accountRepository.removeAccount(event.accountId);
+    add(LoadAccounts());
+  }
+
+  Future<void> _onUpdateAccountToken(
+    UpdateAccountToken event,
+    Emitter<NotibarState> emit,
+  ) async {
+    final accounts = await _accountRepository.getAccounts();
+    final idx = accounts.indexWhere((a) => a.id == event.accountId);
+    if (idx == -1) return;
+    accounts[idx] = accounts[idx].copyWith(apiKey: event.token);
+    await _accountRepository.saveAccounts(accounts);
+    add(LoadAccounts());
+  }
+
+  Future<void> _onUpdateAccount(
+    UpdateAccount event,
+    Emitter<NotibarState> emit,
+  ) async {
+    final accounts = await _accountRepository.getAccounts();
+    final idx = accounts.indexWhere((a) => a.id == event.account.id);
+    if (idx == -1) return;
+    accounts[idx] = event.account;
+    await _accountRepository.saveAccounts(accounts);
+    add(LoadAccounts());
+  }
+
+  // ─── Notification Option handlers ───
+
+  Future<void> _onAddOption(
+    AddNotificationOption event,
+    Emitter<NotibarState> emit,
+  ) async {
+    await _optionRepository.addOption(event.option);
+    add(LoadAccounts());
+  }
+
+  Future<void> _onRemoveOption(
+    RemoveNotificationOption event,
+    Emitter<NotibarState> emit,
+  ) async {
+    await _optionRepository.removeOption(event.optionId);
+    add(LoadAccounts());
+  }
+
+  Future<void> _onToggleOption(
+    ToggleNotificationOption event,
+    Emitter<NotibarState> emit,
+  ) async {
+    final options = await _optionRepository.getOptions();
+    final idx = options.indexWhere((o) => o.id == event.optionId);
+    if (idx == -1) return;
+    options[idx] = options[idx].copyWith(enabled: !options[idx].enabled);
+    await _optionRepository.saveOptions(options);
+    add(LoadAccounts());
+  }
+
+  Future<void> _onReorderOptions(
+    ReorderNotificationOptions event,
+    Emitter<NotibarState> emit,
+  ) async {
+    final options = await _optionRepository.getOptions();
+    var newIndex = event.newIndex;
+    if (newIndex > event.oldIndex) newIndex--;
+    final item = options.removeAt(event.oldIndex);
+    options.insert(newIndex, item);
+    for (var i = 0; i < options.length; i++) {
+      options[i] = options[i].copyWith(sortOrder: i);
+    }
+    await _optionRepository.saveOptions(options);
+    add(LoadAccounts());
+  }
+
+  Future<void> _onUpdateOption(
+    UpdateNotificationOption event,
+    Emitter<NotibarState> emit,
+  ) async {
+    final options = await _optionRepository.getOptions();
+    final idx = options.indexWhere((o) => o.id == event.option.id);
+    if (idx == -1) return;
+    options[idx] = event.option;
+    await _optionRepository.saveOptions(options);
+    add(LoadAccounts());
   }
 
   @override

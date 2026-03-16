@@ -46,32 +46,10 @@ class OutlookPlugin implements NotibarPlugin {
       }
 
       final data = json.decode(response.body);
-      final List<dynamic> messages = data['value'] ?? [];
-
-      final items = messages.map((m) {
-        final from = m['from']?['emailAddress']?['name'] ?? m['from']?['emailAddress']?['address'] ?? 'Unknown';
-        DateTime? timestamp;
-        try {
-          if (m['receivedDateTime'] != null) {
-            timestamp = DateTime.parse(m['receivedDateTime']);
-          }
-        } catch (_) {}
-
-        return NotificationItem(
-          id: m['id'] ?? '',
-          title: m['subject'] ?? '(No Subject)',
-          subtitle: from,
-          timestamp: timestamp ?? DateTime.now(),
-          actionUrl: m['webLink'] ?? '',
-          isUnread: !(m['isRead'] ?? true),
-          isFlagged: m['flag']?['flagStatus'] == 'flagged',
-        );
-      }).toList();
-
-      return NotificationSummary(
+      return parseSummary(
+        data,
         unreadCount: unreadCount,
         flaggedCount: flaggedCount,
-        items: items,
       );
     } on SocketException {
       return NotificationSummary.withError(
@@ -82,6 +60,51 @@ class OutlookPlugin implements NotibarPlugin {
         PluginError(type: PluginErrorType.unknown, message: e.toString()),
       );
     }
+  }
+
+  @override
+  NotificationSummary parseSummary(Map<String, dynamic> json, {
+    int? unreadCount, 
+    int? flaggedCount, 
+    int? mentionCount,
+    int? assignedIssuesCount,
+    int? assignedPRsCount,
+    int? reviewRequestsCount,
+  }) {
+    final List<dynamic> messages = json['value'] ?? [];
+
+    final items = messages.map((m) {
+      final fromData = m['from']?['emailAddress'];
+      final fromName = fromData?['name'] ?? fromData?['address'] ?? 'Unknown';
+      
+      DateTime? timestamp;
+      try {
+        if (m['receivedDateTime'] != null) {
+          timestamp = DateTime.parse(m['receivedDateTime']);
+        }
+      } catch (_) {}
+
+      return NotificationItem(
+        id: m['id'] ?? '',
+        title: m['subject'] ?? '(No Subject)',
+        subtitle: fromName,
+        timestamp: timestamp ?? DateTime.now(),
+        actionUrl: m['webLink'] ?? '',
+        isUnread: !(m['isRead'] ?? true),
+        isFlagged: m['flag']?['flagStatus'] == 'flagged',
+        metadata: {
+          'id': m['id'],
+          'from': fromName,
+          'isRead': m['isRead'],
+        },
+      );
+    }).toList();
+
+    return NotificationSummary(
+      unreadCount: unreadCount ?? items.where((i) => i.isUnread).length,
+      flaggedCount: flaggedCount ?? items.where((i) => i.isFlagged).length,
+      items: items,
+    );
   }
 
   Future<int> _fetchCount(String token, String filter) async {

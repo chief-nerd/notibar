@@ -5,41 +5,61 @@ import 'package:notibar/bloc/notibar_bloc.dart';
 import 'package:notibar/bloc/notibar_event.dart';
 import 'package:notibar/bloc/notibar_state.dart';
 import 'package:notibar/models/account.dart';
+import 'package:notibar/models/notification_option.dart';
 import 'package:notibar/plugins/plugin_interface.dart';
 import 'package:notibar/repositories/account_repository.dart';
+import 'package:notibar/repositories/notification_option_repository.dart';
 
 class MockNotibarPlugin extends Mock implements NotibarPlugin {}
+
 class MockAccountRepository extends Mock implements AccountRepository {}
+
+class MockNotificationOptionRepository extends Mock
+    implements NotificationOptionRepository {}
 
 void main() {
   group('NotibarBloc', () {
     late NotibarBloc notibarBloc;
     late MockNotibarPlugin mockPlugin;
     late MockAccountRepository mockRepo;
+    late MockNotificationOptionRepository mockOptionRepo;
     final testAccount = const Account(
       id: '1',
       name: 'Test',
       serviceType: ServiceType.outlook,
     );
+    final testOption = const NotificationOption(
+      id: 'opt_1',
+      accountId: '1',
+      label: 'Unread',
+      metric: DisplayMetric.unread,
+    );
 
     setUp(() {
       mockPlugin = MockNotibarPlugin();
       mockRepo = MockAccountRepository();
-      
+      mockOptionRepo = MockNotificationOptionRepository();
+
       registerFallbackValue(testAccount);
-      
+
       when(() => mockPlugin.serviceType).thenReturn(ServiceType.outlook);
-      when(() => mockPlugin.fetchNotifications(any())).thenAnswer((_) async => NotificationSummary(
-        unreadCount: 5,
-        flaggedCount: 2,
-        items: [],
-      ));
+      when(() => mockPlugin.fetchNotifications(any())).thenAnswer(
+        (_) async =>
+            NotificationSummary(unreadCount: 5, flaggedCount: 2, items: []),
+      );
 
       when(() => mockRepo.getAccounts()).thenAnswer((_) async => [testAccount]);
+      when(() => mockRepo.saveAccounts(any())).thenAnswer((_) async {});
+      when(
+        () => mockOptionRepo.getOptions(),
+      ).thenAnswer((_) async => [testOption]);
 
       notibarBloc = NotibarBloc(
         accountRepository: mockRepo,
-        plugins: {ServiceType.outlook: mockPlugin},
+        optionRepository: mockOptionRepo,
+        plugins: {
+          ServiceType.outlook: mockPlugin,
+        },
       );
     });
 
@@ -74,6 +94,7 @@ void main() {
       build: () => notibarBloc,
       seed: () => NotibarLoaded(
         accounts: [testAccount],
+        options: [testOption],
         summariesByAccountId: {
           '1': NotificationSummary(unreadCount: 0, flaggedCount: 0, items: []),
         },
@@ -94,7 +115,10 @@ void main() {
       setUp: () {
         when(() => mockPlugin.fetchNotifications(any())).thenAnswer(
           (_) async => NotificationSummary.withError(
-            PluginError(type: PluginErrorType.authentication, message: 'Failed'),
+            PluginError(
+              type: PluginErrorType.authentication,
+              message: 'Failed',
+            ),
           ),
         );
       },
