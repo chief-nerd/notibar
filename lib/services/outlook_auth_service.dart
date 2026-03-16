@@ -26,9 +26,10 @@ class OutlookAuthService {
     final codeVerifier = _generateCodeVerifier();
     final codeChallenge = _generateCodeChallenge(codeVerifier);
 
-    // Find an available port
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final port = server.port;
+    // Use a fixed port so the redirect URI is predictable and matches
+    // what's registered in Azure AD.
+    const port = 23847;
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
     final redirectUri = 'http://localhost:$port/callback';
 
     final authUrl = Uri.https(

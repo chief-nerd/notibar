@@ -12,7 +12,7 @@ Notibar connects to Microsoft Graph API to fetch your Outlook mail counts. Authe
      - *Single tenant* — only your organization
      - *Multitenant* — any Azure AD directory
      - *Personal Microsoft accounts* — Outlook.com, Hotmail, etc.
-   - **Redirect URI**: Select **Public client/native (mobile & desktop)** and enter `http://localhost` (the port is assigned dynamically at runtime)
+   - **Redirect URI**: Select **Web** and enter `http://localhost:23847/callback`
 4. Click **Register**
 
 ## 2. Note Your IDs
@@ -61,12 +61,12 @@ Once the account is added:
 
 ## Troubleshooting
 
-| Problem                          | Solution                                                                                                                                |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| **Login page doesn't open**      | Check that your default browser is set and working                                                                                      |
-| **"AADSTS700054" error**         | The redirect URI doesn't match. Ensure `http://localhost` is listed under **Authentication → Mobile and desktop applications** in Azure |
-| **401 after token expires**      | Click the account in Settings and sign in again. Future versions will support refresh tokens automatically                              |
-| **0 counts despite having mail** | Verify `Mail.Read` permission is granted and admin consent was given                                                                    |
+| Problem                          | Solution                                                                                                                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Login page doesn't open**      | Check that your default browser is set and working                                                                                         |
+| **"AADSTS700054" error**         | The redirect URI doesn't match. Ensure `http://localhost:23847/callback` is listed under **Authentication → Web → Redirect URIs** in Azure |
+| **401 after token expires**      | Click the account in Settings and sign in again. Future versions will support refresh tokens automatically                                 |
+| **0 counts despite having mail** | Verify `Mail.Read` permission is granted and admin consent was given                                                                       |
 
 ## Scopes Used
 
