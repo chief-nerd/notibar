@@ -1,12 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
 import 'bloc/notibar_bloc.dart';
 import 'bloc/notibar_event.dart';
-import 'models/account.dart';
-import 'models/notification_option.dart';
 import 'repositories/account_repository.dart';
 import 'repositories/notification_option_repository.dart';
 import 'ui/settings_window.dart';

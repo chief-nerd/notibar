@@ -33,8 +33,13 @@ class MultiStatusItemPlugin: NSObject, FlutterPlugin {
   // MARK: - Method call dispatch
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-    NSLog("[MultiStatusItem] handle method: \(call.method) args: \(String(describing: call.arguments))")
     let args = call.arguments as? [String: Any]
+    // Log method name with compact summary (avoid dumping full item arrays)
+    if call.method == "setMenu", let items = args?["items"] as? [[String: Any]] {
+      NSLog("[MultiStatusItem] handle method: setMenu id=\(args?["id"] ?? "?") items=\(items.count)")
+    } else {
+      NSLog("[MultiStatusItem] handle method: \(call.method) id=\(args?["id"] ?? "?")")
+    }
 
     switch call.method {
     case "create":

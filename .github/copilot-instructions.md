@@ -3,8 +3,9 @@
 ## Workflow Rules
 
 - **After every round of changes**, check for Problems (errors, warnings, info). Fix all errors before moving on. Warnings and infos should be addressed unless there's a strong reason not to.
-- **Always update `TODO.md`** at the project root at the end of a session. Record what was done, what's left, and any known issues. Keep it minimal — just enough context for the next agent session.
+- **Always update `TODO.md`** at the project root at the end of a session. Record what was done, what's left, and any known issues. Keep it minimal — just enough context for the next agent session. Move the items to the correct sections (Completed, Open) and add any relevant items about workarounds for issues encountered.
 - **Run tests** (`flutter test`) after modifying bloc, model, or repository code to catch regressions.
+- **Learn from mistakes**: When you encounter a repeated error or discover a non-obvious gotcha (e.g. platform-specific logging behavior, API quirks), add it to the relevant section of this file (Debugging, Common Pitfalls, etc.) so the same mistake is never made twice.
 
 ## Architecture
 
@@ -78,3 +79,15 @@ Do **not** add new dependencies without justification. Prefer what's already in 
 - When editing `settings_window.dart`, watch out for duplicate class names — the file is large.
 - After removing fields from a model, check all UI code that references those fields.
 - Removing a Bloc event requires checking both the Bloc handlers and all `bloc.add(...)` call sites in UI code.
+- **Microsoft Graph API rate limits (429)**: Too many parallel API calls can trigger throttling. Prefer deriving data from existing responses (e.g. find "Inbox" folder ID from the folder map) rather than making separate API calls. Keep parallel Graph API requests to a minimum.
+
+## Debugging
+
+- **Flutter `debugPrint` / `print` output does NOT appear in macOS system logs** (`log show`). It only goes to the stdout of the `flutter run` process. To see it:
+  1. Run the app with output redirected to a file: `flutter run -d macos > /tmp/notibar_debug.log 2>&1` (in a background job or separate terminal).
+  2. Wait for the app to start and perform the action you want to debug.
+  3. Read the log: `grep -i "your_search_term" /tmp/notibar_debug.log`.
+- **Native Swift `NSLog` output** (e.g. from `MultiStatusItemPlugin`) **does** appear in system logs: `log show --predicate 'process == "notibar"' --last 2m --style compact`.
+- **Do not** waste time trying to read `debugPrint` output via `log show` — it will never appear there.
+- Logging tags in the codebase: `[App]`, `[Bloc]`, `[Tray]`, `[Outlook]`, `[OutlookAuth]`. Use these to grep for relevant output.
+- When adding temporary debug logging, always remove it after the issue is resolved.

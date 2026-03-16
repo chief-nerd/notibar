@@ -21,7 +21,7 @@ class FrappePlugin implements NotibarPlugin {
       );
     }
 
-    final baseUrl = account.config['baseUrl']?.trim()?.replaceAll(RegExp(r'/$'), '');
+    final baseUrl = account.config['baseUrl']?.trim().replaceAll(RegExp(r'/$'), '');
     if (baseUrl == null || baseUrl.isEmpty) {
       return NotificationSummary.withError(
         PluginError(type: PluginErrorType.unknown, message: 'Frappe Base URL is required'),

@@ -7,9 +7,10 @@ abstract class NotibarPlugin {
 
   /// Decodes raw JSON from the service into a NotificationSummary.
   /// Useful for testing and decoupled parsing.
-  NotificationSummary parseSummary(Map<String, dynamic> json, {
-    int? unreadCount, 
-    int? flaggedCount, 
+  NotificationSummary parseSummary(
+    Map<String, dynamic> json, {
+    int? unreadCount,
+    int? flaggedCount,
     int? mentionCount,
     int? assignedIssuesCount,
     int? assignedPRsCount,
@@ -27,6 +28,10 @@ class NotificationSummary {
   final List<NotificationItem> items;
   final PluginError? error;
 
+  /// If the plugin refreshed the auth token, this contains the updated account
+  /// that should be persisted.
+  final Account? refreshedAccount;
+
   const NotificationSummary({
     this.unreadCount = 0,
     this.flaggedCount = 0,
@@ -36,17 +41,14 @@ class NotificationSummary {
     this.reviewRequestsCount = 0,
     required this.items,
     this.error,
+    this.refreshedAccount,
   });
 
   factory NotificationSummary.withError(PluginError error) =>
       NotificationSummary(items: const [], error: error);
 }
 
-enum PluginErrorType {
-  authentication,
-  network,
-  unknown,
-}
+enum PluginErrorType { authentication, network, unknown }
 
 class PluginError {
   final PluginErrorType type;

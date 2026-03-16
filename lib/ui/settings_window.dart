@@ -493,7 +493,7 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<DisplayMetric>(
-              value: _selectedMetric,
+              initialValue: _selectedMetric,
               decoration: const InputDecoration(
                 labelText: 'What to show',
                 border: OutlineInputBorder(),
@@ -857,12 +857,18 @@ class _LoginButton extends StatelessWidget {
       clientId: clientId,
       tenantId: account.config['tenantId'] ?? 'common',
     );
-    final token = await authService.login();
+    final result = await authService.login();
 
     if (!context.mounted) return;
 
-    if (token != null) {
-      bloc.add(UpdateAccountToken(account.id, token));
+    if (result != null) {
+      bloc.add(UpdateAccountToken(account.id, result.accessToken));
+      // Store refresh token in account config for automatic token renewal
+      if (result.refreshToken != null) {
+        final updatedConfig = Map<String, String>.from(account.config);
+        updatedConfig['refreshToken'] = result.refreshToken!;
+        bloc.add(UpdateAccount(account.copyWith(config: updatedConfig)));
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Successfully signed in!'),

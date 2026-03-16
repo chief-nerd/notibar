@@ -18,7 +18,7 @@ class JiraPlugin implements NotibarPlugin {
       );
     }
 
-    final baseUrl = account.config['baseUrl']?.trim()?.replaceAll(RegExp(r'/$'), '');
+    final baseUrl = account.config['baseUrl']?.trim().replaceAll(RegExp(r'/$'), '');
     final projectKey = account.config['projectKey']?.trim();
 
     if (baseUrl == null || baseUrl.isEmpty) {

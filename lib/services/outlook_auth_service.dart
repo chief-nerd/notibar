@@ -9,6 +9,12 @@ import 'package:url_launcher/url_launcher.dart';
 
 const _tag = '[OutlookAuth]';
 
+class TokenResult {
+  final String accessToken;
+  final String? refreshToken;
+  const TokenResult({required this.accessToken, this.refreshToken});
+}
+
 class OutlookAuthService {
   final String clientId;
   final String tenantId;
@@ -25,8 +31,10 @@ class OutlookAuthService {
   /// Starts the OAuth2 Authorization Code flow with PKCE.
   /// Opens the browser for login and listens on a local port for the redirect.
   /// Returns the access token on success, or null on failure/cancellation.
-  Future<String?> login() async {
-    debugPrint('$_tag starting login flow (clientId=${clientId.substring(0, 8)}..., tenant=$tenantId)');
+  Future<TokenResult?> login() async {
+    debugPrint(
+      '$_tag starting login flow (clientId=${clientId.substring(0, 8)}..., tenant=$tenantId)',
+    );
     final codeVerifier = _generateCodeVerifier();
     final codeChallenge = _generateCodeChallenge(codeVerifier);
 
@@ -110,7 +118,7 @@ class OutlookAuthService {
     return _exchangeCodeForToken(authCode, redirectUri, codeVerifier);
   }
 
-  Future<String?> _exchangeCodeForToken(
+  Future<TokenResult?> _exchangeCodeForToken(
     String code,
     String redirectUri,
     String codeVerifier,
@@ -134,14 +142,59 @@ class OutlookAuthService {
     );
 
     if (response.statusCode != 200) {
-      debugPrint('$_tag token exchange failed: ${response.statusCode} ${response.body}');
+      debugPrint(
+        '$_tag token exchange failed: ${response.statusCode} ${response.body}',
+      );
       return null;
     }
 
     final data = json.decode(response.body);
     final token = data['access_token'] as String?;
-    debugPrint('$_tag token exchange OK (token=${token != null ? '${token.length} chars' : 'null'})');
-    return token;
+    final refreshToken = data['refresh_token'] as String?;
+    debugPrint(
+      '$_tag token exchange OK (token=${token != null ? '${token.length} chars' : 'null'}, refresh=${refreshToken != null ? '${refreshToken.length} chars' : 'null'})',
+    );
+    if (token == null) return null;
+    return TokenResult(accessToken: token, refreshToken: refreshToken);
+  }
+
+  /// Uses a refresh token to get a new access token (and possibly a new refresh token).
+  Future<TokenResult?> refreshAccessToken(String refreshToken) async {
+    debugPrint('$_tag refreshing access token...');
+    final tokenUrl = Uri.https(
+      'login.microsoftonline.com',
+      '/$tenantId/oauth2/v2.0/token',
+    );
+
+    final response = await http.post(
+      tokenUrl,
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: {
+        'client_id': clientId,
+        'grant_type': 'refresh_token',
+        'refresh_token': refreshToken,
+        'scope': _scopes.join(' '),
+      },
+    );
+
+    if (response.statusCode != 200) {
+      debugPrint(
+        '$_tag refresh failed: ${response.statusCode} ${response.body}',
+      );
+      return null;
+    }
+
+    final data = json.decode(response.body);
+    final newToken = data['access_token'] as String?;
+    final newRefresh = data['refresh_token'] as String?;
+    debugPrint(
+      '$_tag refresh OK (token=${newToken != null ? '${newToken.length} chars' : 'null'}, refresh=${newRefresh != null ? '${newRefresh.length} chars' : 'null'})',
+    );
+    if (newToken == null) return null;
+    return TokenResult(
+      accessToken: newToken,
+      refreshToken: newRefresh ?? refreshToken,
+    );
   }
 
   String _generateCodeVerifier() {

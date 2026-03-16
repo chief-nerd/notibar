@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../bloc/notibar_bloc.dart';
@@ -92,7 +91,9 @@ class TrayManager {
 
   Future<void> _updateTray(NotibarLoaded state) async {
     final newItemIds = <String>{};
-    debugPrint('$_tag updating: ${state.options.length} options, ${state.accounts.length} accounts, ${state.summariesByAccountId.length} summaries');
+    debugPrint(
+      '$_tag updating: ${state.options.length} options, ${state.accounts.length} accounts, ${state.summariesByAccountId.length} summaries',
+    );
 
     for (final option in state.options) {
       if (!option.enabled) continue;
@@ -135,7 +136,9 @@ class TrayManager {
       // Build dropdown menu with notification items.
       final filteredItems = _filterItems(summary, option.metric);
       await _setOptionMenu(itemId, filteredItems);
-      debugPrint('$_tag  ${option.label}: $icon $count (${filteredItems.length} menu items)');
+      debugPrint(
+        '$_tag  ${option.label}: $icon $count (${filteredItems.length} menu items)',
+      );
     }
 
     // Remove status items that are no longer active.
@@ -184,7 +187,7 @@ class TrayManager {
         }
       }
 
-      // Inbox items flat (capped)
+      // Inbox items flat (capped), overflow into a "more" submenu
       final inboxToShow = inboxItems.take(_maxItemsPerOption).toList();
       for (var i = 0; i < inboxToShow.length; i++) {
         menuItems.add(_buildMenuEntry(inboxToShow[i]));
@@ -193,10 +196,22 @@ class TrayManager {
         }
       }
       if (inboxItems.length > _maxItemsPerOption) {
-        menuItems.add(StatusMenuItem(
-          label: '${inboxItems.length - _maxItemsPerOption} more in Inbox...',
-          enabled: false,
-        ));
+        final overflow = inboxItems.sublist(_maxItemsPerOption);
+        final parentIdx = menuItems.length;
+        final children = <StatusMenuItem>[];
+        for (var ci = 0; ci < overflow.length; ci++) {
+          children.add(_buildMenuEntry(overflow[ci]));
+          if (overflow[ci].actionUrl.isNotEmpty) {
+            callbacks[parentIdx * 1000 + ci] = () =>
+                _launchUrl(overflow[ci].actionUrl);
+          }
+        }
+        menuItems.add(
+          StatusMenuItem(
+            label: '${overflow.length} more in Inbox...',
+            children: children,
+          ),
+        );
       }
 
       // Folder submenus
@@ -212,14 +227,17 @@ class TrayManager {
           children.add(_buildMenuEntry(folderItems[ci]));
           if (folderItems[ci].actionUrl.isNotEmpty) {
             // Composite index: parentIdx * 1000 + childIndex
-            callbacks[parentIdx * 1000 + ci] = () => _launchUrl(folderItems[ci].actionUrl);
+            callbacks[parentIdx * 1000 + ci] = () =>
+                _launchUrl(folderItems[ci].actionUrl);
           }
         }
 
-        menuItems.add(StatusMenuItem(
-          label: '$folder (${folderItems.length})',
-          children: children,
-        ));
+        menuItems.add(
+          StatusMenuItem(
+            label: '$folder (${folderItems.length})',
+            children: children,
+          ),
+        );
       }
     }
 
