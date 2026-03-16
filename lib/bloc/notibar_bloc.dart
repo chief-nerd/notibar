@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/account.dart';
 import '../plugins/plugin_interface.dart';
@@ -38,6 +39,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
              ServiceType.mattermost: MattermostPlugin(),
            },
        super(NotibarInitial()) {
+    debugPrint('[Bloc] init with ${_plugins.length} plugins: ${_plugins.keys.join(', ')}');
     on<LoadAccounts>(_onLoadAccounts);
     on<RefreshAll>(_onRefreshAll);
     on<RefreshAccount>(_onRefreshAccount);
@@ -60,6 +62,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
     try {
       final accounts = await _accountRepository.getAccounts();
       final options = await _optionRepository.getOptions();
+      debugPrint('[Bloc] LoadAccounts: ${accounts.length} accounts, ${options.length} options');
 
       // Fetch summaries for accounts that have enabled options
       final activeAccountIds = options
@@ -76,6 +79,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
         if (!activeAccountIds.contains(account.id)) continue;
         final plugin = _plugins[account.serviceType];
         if (plugin != null) {
+          debugPrint('[Bloc]   fetching ${account.serviceType.name}/${account.name} (${account.id})');
           summaries[account.id] = await plugin.fetchNotifications(account);
           updatedAccounts[i] = account.copyWith(lastRefreshTime: now);
         } else {
@@ -99,8 +103,10 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
           options: options,
         ),
       );
+      debugPrint('[Bloc] LoadAccounts done: ${summaries.length} summaries emitted');
       _startPolling(updatedAccounts, activeAccountIds);
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('[Bloc] LoadAccounts error: $e\n$stack');
       emit(NotibarError('Failed to load: $e'));
     }
   }
@@ -110,6 +116,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
       timer.cancel();
     }
     _pollingTimers.clear();
+    debugPrint('[Bloc] starting polling for ${activeAccountIds.length} active accounts');
 
     final now = DateTime.now();
     for (final account in accounts) {
@@ -125,6 +132,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
       }
 
       if (initialDelay == Duration.zero) {
+        debugPrint('[Bloc]   poll ${account.name}: every ${account.pollingInterval.inSeconds}s');
         // Start periodic timer immediately
         _pollingTimers[account.id] = Timer.periodic(account.pollingInterval, (
           _,
@@ -132,6 +140,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
           add(RefreshAccount(account.id));
         });
       } else {
+        debugPrint('[Bloc]   poll ${account.name}: first in ${initialDelay.inSeconds}s, then every ${account.pollingInterval.inSeconds}s');
         // Wait for initial delay, then start periodic timer
         _pollingTimers[account.id] = Timer(initialDelay, () {
           add(RefreshAccount(account.id));
@@ -203,7 +212,12 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
       final account = currentState.accounts
           .where((a) => a.id == event.accountId)
           .firstOrNull;
-      if (account == null) return;
+      if (account == null) {
+        debugPrint('[Bloc] RefreshAccount: account ${event.accountId} not found');
+        return;
+      }
+
+      debugPrint('[Bloc] RefreshAccount: ${account.name} (${account.serviceType.name})');
 
       final plugin = _plugins[account.serviceType];
       if (plugin != null) {
@@ -237,6 +251,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
     AddAccount event,
     Emitter<NotibarState> emit,
   ) async {
+    debugPrint('[Bloc] AddAccount: ${event.account.name} (${event.account.serviceType.name})');
     await _accountRepository.addAccount(event.account);
     add(LoadAccounts());
   }
@@ -245,6 +260,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
     RemoveAccount event,
     Emitter<NotibarState> emit,
   ) async {
+    debugPrint('[Bloc] RemoveAccount: ${event.accountId}');
     // Also remove all notification options for this account
     final options = await _optionRepository.getOptions();
     final updated = options
@@ -259,6 +275,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
     UpdateAccountToken event,
     Emitter<NotibarState> emit,
   ) async {
+    debugPrint('[Bloc] UpdateAccountToken: ${event.accountId}');
     final accounts = await _accountRepository.getAccounts();
     final idx = accounts.indexWhere((a) => a.id == event.accountId);
     if (idx == -1) return;

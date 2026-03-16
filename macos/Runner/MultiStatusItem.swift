@@ -165,40 +165,79 @@ class MultiStatusItemPlugin: NSObject, FlutterPlugin {
     menuActions = menuActions.filter { !$0.key.hasPrefix("\(id):") }
 
     for (index, itemData) in items.enumerated() {
-      let type = itemData["type"] as? String ?? "item"
-
-      if type == "separator" {
-        menu.addItem(NSMenuItem.separator())
-        continue
-      }
-
-      let label = itemData["label"] as? String ?? ""
-      let enabled = itemData["enabled"] as? Bool ?? true
-      let hasCallback = itemData["hasCallback"] as? Bool ?? false
-
-      let menuItem = NSMenuItem(title: label, action: nil, keyEquivalent: "")
-      menuItem.isEnabled = enabled
-
-      if enabled && hasCallback {
-        let actionKey = "\(id):\(index)"
-        menuItem.target = self
-        menuItem.action = #selector(onMenuItemClick(_:))
-        menuItem.tag = index
-        menuItem.representedObject = id as NSString
-
-        menuActions[actionKey] = { [weak self] in
-          self?.channel.invokeMethod("onMenuItemClick", arguments: [
-            "itemId": id,
-            "menuIndex": index,
-          ])
-        }
-      }
-
+      let menuItem = buildMenuItem(id: id, index: index, data: itemData)
       menu.addItem(menuItem)
+
+      // Handle submenu children
+      if let children = itemData["children"] as? [[String: Any]], !children.isEmpty {
+        let submenu = NSMenu()
+        for (childIndex, childData) in children.enumerated() {
+          // Use a composite index so callbacks route correctly: parentIndex * 1000 + childIndex
+          let flatIndex = index * 1000 + childIndex
+          let childItem = buildMenuItem(id: id, index: flatIndex, data: childData)
+          submenu.addItem(childItem)
+        }
+        menuItem.submenu = submenu
+      }
     }
 
     menus[id] = menu
     statusItems[id]?.menu = menu
+  }
+
+  /// Builds a single NSMenuItem from the data dictionary, wiring up attributed titles and callbacks.
+  private func buildMenuItem(id: String, index: Int, data: [String: Any]) -> NSMenuItem {
+    let type = data["type"] as? String ?? "item"
+    if type == "separator" {
+      return NSMenuItem.separator()
+    }
+
+    let label = data["label"] as? String ?? ""
+    let subtitle = data["subtitle"] as? String
+    let enabled = data["enabled"] as? Bool ?? true
+    let hasCallback = data["hasCallback"] as? Bool ?? false
+
+    let menuItem = NSMenuItem(title: label, action: nil, keyEquivalent: "")
+    menuItem.isEnabled = enabled
+
+    // Build attributed title for rich two-line display
+    if let subtitle = subtitle, !subtitle.isEmpty {
+      let titleFont = NSFont.menuFont(ofSize: 13)
+      let subtitleFont = NSFont.menuFont(ofSize: 11)
+      let titleColor: NSColor = enabled ? .labelColor : .secondaryLabelColor
+      let subtitleColor: NSColor = .secondaryLabelColor
+
+      let attrStr = NSMutableAttributedString()
+      attrStr.append(NSAttributedString(string: label, attributes: [
+        .font: titleFont,
+        .foregroundColor: titleColor,
+      ]))
+      attrStr.append(NSAttributedString(string: "\n", attributes: [
+        .font: NSFont.menuFont(ofSize: 2),
+      ]))
+      attrStr.append(NSAttributedString(string: subtitle, attributes: [
+        .font: subtitleFont,
+        .foregroundColor: subtitleColor,
+      ]))
+      menuItem.attributedTitle = attrStr
+    }
+
+    if enabled && hasCallback {
+      let actionKey = "\(id):\(index)"
+      menuItem.target = self
+      menuItem.action = #selector(onMenuItemClick(_:))
+      menuItem.tag = index
+      menuItem.representedObject = id as NSString
+
+      menuActions[actionKey] = { [weak self] in
+        self?.channel.invokeMethod("onMenuItemClick", arguments: [
+          "itemId": id,
+          "menuIndex": index,
+        ])
+      }
+    }
+
+    return menuItem
   }
 
   // MARK: - Click handlers

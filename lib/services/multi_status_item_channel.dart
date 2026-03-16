@@ -3,28 +3,36 @@ import 'package:flutter/services.dart';
 /// Represents a single menu entry for a status item's dropdown.
 class StatusMenuItem {
   final String label;
+  final String? subtitle;
   final bool enabled;
   final bool isSeparator;
   final bool hasCallback;
+  final List<StatusMenuItem>? children;
 
   const StatusMenuItem({
     this.label = '',
+    this.subtitle,
     this.enabled = true,
     this.isSeparator = false,
     this.hasCallback = false,
+    this.children,
   });
 
   const StatusMenuItem.separator()
     : label = '',
+      subtitle = null,
       enabled = false,
       isSeparator = true,
-      hasCallback = false;
+      hasCallback = false,
+      children = null;
 
   Map<String, dynamic> toMap() => {
     'label': label,
+    if (subtitle != null) 'subtitle': subtitle,
     'enabled': enabled,
     'type': isSeparator ? 'separator' : 'item',
     'hasCallback': hasCallback,
+    if (children != null) 'children': children!.map((c) => c.toMap()).toList(),
   };
 }
 

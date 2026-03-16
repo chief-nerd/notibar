@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:window_manager/window_manager.dart';
@@ -15,6 +16,7 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  debugPrint('[App] starting');
 
   // Must initialize window manager before hiding
   await windowManager.ensureInitialized();
@@ -32,6 +34,7 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   final accountRepo = AccountRepository(prefs);
   final optionRepo = NotificationOptionRepository(prefs);
+  debugPrint('[App] repos initialized');
 
   // Seed demo data on first run only
   final hasRunBefore = prefs.getBool('has_run_before') ?? false;
@@ -50,6 +53,7 @@ void main() async {
     onSettingsPressed: () => _showSettings(),
   );
   await trayManager.init();
+  debugPrint('[App] tray initialized, launching UI');
 
   runApp(
     BlocProvider.value(value: bloc..add(LoadAccounts()), child: const MyApp()),

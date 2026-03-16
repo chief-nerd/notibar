@@ -3,8 +3,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
+
+const _tag = '[OutlookAuth]';
 
 class OutlookAuthService {
   final String clientId;
@@ -23,6 +26,7 @@ class OutlookAuthService {
   /// Opens the browser for login and listens on a local port for the redirect.
   /// Returns the access token on success, or null on failure/cancellation.
   Future<String?> login() async {
+    debugPrint('$_tag starting login flow (clientId=${clientId.substring(0, 8)}..., tenant=$tenantId)');
     final codeVerifier = _generateCodeVerifier();
     final codeChallenge = _generateCodeChallenge(codeVerifier);
 
@@ -31,6 +35,7 @@ class OutlookAuthService {
     const port = 23847;
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, port);
     final redirectUri = 'http://localhost:$port/callback';
+    debugPrint('$_tag callback server listening on $redirectUri');
 
     final authUrl = Uri.https(
       'login.microsoftonline.com',
@@ -48,9 +53,11 @@ class OutlookAuthService {
 
     // Open browser for login
     if (!await launchUrl(authUrl, mode: LaunchMode.externalApplication)) {
+      debugPrint('$_tag failed to open browser');
       await server.close();
       return null;
     }
+    debugPrint('$_tag browser opened, waiting for callback...');
 
     // Wait for the callback (with a timeout)
     String? authCode;
@@ -61,6 +68,7 @@ class OutlookAuthService {
         final error = request.uri.queryParameters['error'];
 
         if (authCode != null) {
+          debugPrint('$_tag received auth code (${authCode.length} chars)');
           request.response
             ..statusCode = 200
             ..headers.contentType = ContentType.html
@@ -71,6 +79,7 @@ class OutlookAuthService {
             );
           await request.response.close();
         } else {
+          debugPrint('$_tag callback error: $error');
           request.response
             ..statusCode = 400
             ..headers.contentType = ContentType.html
@@ -86,14 +95,18 @@ class OutlookAuthService {
         await request.response.close();
       }
     } on TimeoutException {
-      // User didn't complete login in time
+      debugPrint('$_tag login timed out (3 min)');
     } finally {
       await server.close();
     }
 
-    if (authCode == null) return null;
+    if (authCode == null) {
+      debugPrint('$_tag no auth code received, aborting');
+      return null;
+    }
 
     // Exchange authorization code for tokens
+    debugPrint('$_tag exchanging auth code for token...');
     return _exchangeCodeForToken(authCode, redirectUri, codeVerifier);
   }
 
@@ -120,10 +133,15 @@ class OutlookAuthService {
       },
     );
 
-    if (response.statusCode != 200) return null;
+    if (response.statusCode != 200) {
+      debugPrint('$_tag token exchange failed: ${response.statusCode} ${response.body}');
+      return null;
+    }
 
     final data = json.decode(response.body);
-    return data['access_token'] as String?;
+    final token = data['access_token'] as String?;
+    debugPrint('$_tag token exchange OK (token=${token != null ? '${token.length} chars' : 'null'})');
+    return token;
   }
 
   String _generateCodeVerifier() {
