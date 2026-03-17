@@ -102,13 +102,9 @@ List<DisplayMetric> supportedMetrics(ServiceType type) {
       ];
     case ServiceType.github:
       return [
-        DisplayMetric
-            .unread, // "Todos" in user terminology (unread notifications)
         DisplayMetric.assignedIssues,
         DisplayMetric.assignedPRs,
         DisplayMetric.reviewRequests,
-        DisplayMetric.mentions,
-        DisplayMetric.all,
       ];
     case ServiceType.slack:
     case ServiceType.teams:

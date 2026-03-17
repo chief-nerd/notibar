@@ -6,6 +6,7 @@
 
 ## Completed
 
+- [x] Fix GitHub assigned issues/PRs/review requests showing 0 — was counting from notifications inbox `reason` field only; now uses GitHub Search API (`/search/issues`) for real counts
 - [x] macOS menu bar app running as `.accessory` (no dock icon, tray-only)
 - [x] `NotibarBloc` with full event/state cycle: load, refresh, add/remove/update accounts, polling
 - [x] `Account` model with generic `config` map (supports Outlook, GitHub, Jira, Slack, Custom)

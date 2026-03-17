@@ -135,7 +135,7 @@ class TrayManager {
 
       // Build dropdown menu with notification items.
       final filteredItems = _filterItems(summary, option.metric);
-      await _setOptionMenu(itemId, filteredItems);
+      await _setOptionMenu(itemId, option.accountId, filteredItems);
       debugPrint(
         '$_tag  ${option.label}: $icon $count (${filteredItems.length} menu items)',
       );
@@ -157,6 +157,7 @@ class TrayManager {
 
   Future<void> _setOptionMenu(
     String itemId,
+    String accountId,
     List<NotificationItem> items,
   ) async {
     final menuItems = <StatusMenuItem>[];
@@ -241,12 +242,40 @@ class TrayManager {
       }
     }
 
+    // Add a "Refresh" action at the bottom of every option menu
+    menuItems.add(const StatusMenuItem.separator());
+    final refreshIdx = menuItems.length;
+    menuItems.add(StatusMenuItem(label: 'Refresh', hasCallback: true));
+    callbacks[refreshIdx] = () => bloc.add(RefreshAccount(accountId));
+
     _menuCallbacks[itemId] = callbacks;
     await _channel.setMenu(itemId, menuItems);
   }
 
   StatusMenuItem _buildMenuEntry(NotificationItem item) {
-    // Line 1: indicators + sender — subject
+    final type = item.metadata['type'] as String?;
+
+    // GitHub items: line 1 = #number title, line 2 = repo + labels
+    if (type == 'Issue' || type == 'PullRequest') {
+      final number = item.metadata['number'];
+      var title = item.title;
+      if (title.length > 60) title = '${title.substring(0, 57)}...';
+      final line1 = number != null ? '#$number $title' : title;
+
+      final repo = item.subtitle ?? '';
+      final labels =
+          (item.metadata['labels'] as List<dynamic>?)?.cast<String>() ?? [];
+      final labelStr = labels.map((l) => '[$l]').join(' ');
+      final line2 = [repo, if (labelStr.isNotEmpty) labelStr].join('  ');
+
+      return StatusMenuItem(
+        label: line1,
+        subtitle: line2.isNotEmpty ? line2 : null,
+        hasCallback: item.actionUrl.isNotEmpty,
+      );
+    }
+
+    // Default (Outlook, etc.): indicators + sender — subject
     final indicators = [
       if (item.isUnread) '●',
       if (item.isFlagged) '🚩',
@@ -335,13 +364,25 @@ class TrayManager {
         // We use isFlagged as a general "urgent/mention" marker in the item model
         return summary.items.where((i) => i.isFlagged).toList();
       case DisplayMetric.assignedIssues:
-        // For GitHub/Jira, we can filter by specific markers if added to NotificationItem,
-        // but for now, we'll return all relevant items if they were counted.
-        return summary.items;
+        return summary.items
+            .where((i) => i.metadata['type'] == 'Issue')
+            .toList();
       case DisplayMetric.assignedPRs:
-        return summary.items;
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['type'] == 'PullRequest' &&
+                  i.metadata['reason'] != 'review_requested',
+            )
+            .toList();
       case DisplayMetric.reviewRequests:
-        return summary.items;
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['type'] == 'PullRequest' &&
+                  i.metadata['reason'] == 'review_requested',
+            )
+            .toList();
       case DisplayMetric.all:
         return summary.items;
     }

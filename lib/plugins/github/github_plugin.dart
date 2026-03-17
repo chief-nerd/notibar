@@ -14,44 +14,94 @@ class GithubPlugin implements NotibarPlugin {
     final token = account.apiKey;
     if (token == null || token.isEmpty) {
       return NotificationSummary.withError(
-        PluginError(type: PluginErrorType.authentication, message: 'GitHub Personal Access Token is missing'),
+        PluginError(
+          type: PluginErrorType.authentication,
+          message: 'GitHub Personal Access Token is missing',
+        ),
       );
     }
 
     final owner = account.config['owner']?.trim();
     final repo = account.config['repo']?.trim();
-    
-    String url = 'https://api.github.com/notifications';
-    if (owner != null && owner.isNotEmpty && repo != null && repo.isNotEmpty) {
-      url = 'https://api.github.com/repos/$owner/$repo/notifications';
-    }
+    final headers = {
+      'Authorization': 'Bearer $token',
+      'Accept': 'application/vnd.github.v3+json',
+    };
 
     try {
-      final response = await http.get(
-        Uri.parse('$url?all=false&per_page=20'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/vnd.github.v3+json',
-        },
-      ).timeout(const Duration(seconds: 15));
+      // Fetch authenticated user's login for search queries
+      final userResponse = await http
+          .get(Uri.parse('https://api.github.com/user'), headers: headers)
+          .timeout(const Duration(seconds: 15));
 
-      if (response.statusCode == 401 || response.statusCode == 403) {
+      if (userResponse.statusCode == 401 || userResponse.statusCode == 403) {
         return NotificationSummary.withError(
-          PluginError(type: PluginErrorType.authentication, message: 'GitHub authentication failed'),
+          PluginError(
+            type: PluginErrorType.authentication,
+            message: 'GitHub authentication failed',
+          ),
         );
       }
 
-      if (response.statusCode != 200) {
+      final username = json.decode(userResponse.body)['login'] as String?;
+      if (username == null || username.isEmpty) {
         return NotificationSummary.withError(
-          PluginError(type: PluginErrorType.network, message: 'Failed to fetch GitHub notifications: ${response.statusCode}'),
+          PluginError(
+            type: PluginErrorType.unknown,
+            message: 'Could not determine GitHub username',
+          ),
         );
       }
 
-      final data = json.decode(response.body);
-      return parseSummary({'value': data});
+      // Build search query scope
+      final repoScope =
+          (owner != null && owner.isNotEmpty && repo != null && repo.isNotEmpty)
+          ? 'repo:$owner/$repo+'
+          : '';
+      final encodedUser = Uri.encodeComponent(username);
+      final searchBase =
+          'https://api.github.com/search/issues?per_page=100&q=${repoScope}is:open+';
+
+      // Fetch all three search queries in parallel
+      final results = await Future.wait([
+        http.get(
+          Uri.parse('${searchBase}is:issue+assignee:$encodedUser'),
+          headers: headers,
+        ),
+        http.get(
+          Uri.parse('${searchBase}is:pr+assignee:$encodedUser'),
+          headers: headers,
+        ),
+        http.get(
+          Uri.parse('${searchBase}is:pr+review-requested:$encodedUser'),
+          headers: headers,
+        ),
+      ]).timeout(const Duration(seconds: 15));
+
+      final issueResults = _parseSearch(results[0], 'Issue', 'assign');
+      final prResults = _parseSearch(results[1], 'PullRequest', 'assign');
+      final reviewResults = _parseSearch(
+        results[2],
+        'PullRequest',
+        'review_requested',
+      );
+
+      return NotificationSummary(
+        assignedIssuesCount: issueResults.count,
+        assignedPRsCount: prResults.count,
+        reviewRequestsCount: reviewResults.count,
+        items: [
+          ...issueResults.items,
+          ...prResults.items,
+          ...reviewResults.items,
+        ],
+      );
     } on SocketException {
       return NotificationSummary.withError(
-        PluginError(type: PluginErrorType.network, message: 'No internet connection'),
+        PluginError(
+          type: PluginErrorType.network,
+          message: 'No internet connection',
+        ),
       );
     } catch (e) {
       return NotificationSummary.withError(
@@ -60,83 +110,120 @@ class GithubPlugin implements NotibarPlugin {
     }
   }
 
+  ({int count, List<NotificationItem> items}) _parseSearch(
+    http.Response response,
+    String type,
+    String reason,
+  ) {
+    if (response.statusCode != 200)
+      return (count: 0, items: <NotificationItem>[]);
+    final body = json.decode(response.body);
+    final total = (body['total_count'] as num?)?.toInt() ?? 0;
+    final List<dynamic> searchItems = body['items'] ?? [];
+    final parsed = searchItems.map((item) {
+      final repoFullName =
+          (item['repository_url'] as String?)?.replaceFirst(
+            'https://api.github.com/repos/',
+            '',
+          ) ??
+          '';
+
+      DateTime? timestamp;
+      try {
+        timestamp = DateTime.parse(item['updated_at'] ?? item['created_at']);
+      } catch (_) {}
+
+      final labels =
+          (item['labels'] as List<dynamic>?)
+              ?.map((l) => l['name'] as String? ?? '')
+              .where((l) => l.isNotEmpty)
+              .toList() ??
+          [];
+
+      return NotificationItem(
+        id: '${item['id']}',
+        title: item['title'] ?? '(No Title)',
+        subtitle: repoFullName,
+        timestamp: timestamp ?? DateTime.now(),
+        actionUrl: item['html_url'] ?? '',
+        isUnread: true,
+        isFlagged: false,
+        metadata: {
+          'reason': reason,
+          'type': type,
+          'repository': repoFullName,
+          'number': item['number'],
+          'state': item['state'],
+          'labels': labels,
+        },
+      );
+    }).toList();
+    return (count: total, items: parsed);
+  }
+
   @override
-  NotificationSummary parseSummary(Map<String, dynamic> json, {
-    int? unreadCount, 
-    int? flaggedCount, 
+  NotificationSummary parseSummary(
+    Map<String, dynamic> json, {
+    int? unreadCount,
+    int? flaggedCount,
     int? mentionCount,
     int? assignedIssuesCount,
     int? assignedPRsCount,
     int? reviewRequestsCount,
   }) {
-    final List<dynamic> data = json['value'] ?? [];
-    int calculatedUnread = 0;
-    int calculatedMentions = 0;
-    int calculatedAssignedIssues = 0;
-    int calculatedAssignedPRs = 0;
-    int calculatedReviewRequests = 0;
+    // Parse search API response directly
+    final total = (json['total_count'] as num?)?.toInt() ?? 0;
+    final List<dynamic> data = json['items'] ?? [];
+    final type = json['_type'] as String? ?? 'Issue';
+    final reason = json['_reason'] as String? ?? 'assign';
 
-    final items = data.map((n) {
-      final isUnread = n['unread'] == true;
-      if (isUnread) calculatedUnread++;
-
-      final reason = n['reason'] as String? ?? '';
-      final subject = n['subject'] ?? {};
-      final subjectType = subject['type'] as String? ?? '';
-
-      if (reason == 'mention' || reason == 'team_mention') {
-        calculatedMentions++;
-      } else if (reason == 'assign') {
-        if (subjectType == 'Issue') {
-          calculatedAssignedIssues++;
-        } else if (subjectType == 'PullRequest') {
-          calculatedAssignedPRs++;
-        }
-      } else if (reason == 'review_requested') {
-        calculatedReviewRequests++;
-      }
-
-      final repoData = n['repository'] ?? {};
-      
-      String actionUrl = '';
-      if (subject['url'] != null) {
-        actionUrl = (subject['url'] as String)
-            .replaceFirst('api.github.com/repos', 'github.com')
-            .replaceFirst('/pulls/', '/pull/');
-      } else {
-        actionUrl = repoData['html_url'] ?? '';
-      }
+    final items = data.map((item) {
+      final repoFullName =
+          (item['repository_url'] as String?)?.replaceFirst(
+            'https://api.github.com/repos/',
+            '',
+          ) ??
+          '';
 
       DateTime? timestamp;
       try {
-        if (n['updated_at'] != null) {
-          timestamp = DateTime.parse(n['updated_at']);
-        }
+        timestamp = DateTime.parse(item['updated_at'] ?? item['created_at']);
       } catch (_) {}
 
+      final labels =
+          (item['labels'] as List<dynamic>?)
+              ?.map((l) => l['name'] as String? ?? '')
+              .where((l) => l.isNotEmpty)
+              .toList() ??
+          [];
+
       return NotificationItem(
-        id: n['id'] ?? '',
-        title: subject['title'] ?? '(No Title)',
-        subtitle: repoData['full_name'] ?? 'GitHub',
+        id: '${item['id']}',
+        title: item['title'] ?? '(No Title)',
+        subtitle: repoFullName,
         timestamp: timestamp ?? DateTime.now(),
-        actionUrl: actionUrl,
-        isUnread: isUnread,
-        isFlagged: reason == 'mention' || reason == 'assign' || reason == 'review_requested',
+        actionUrl: item['html_url'] ?? '',
+        isUnread: true,
+        isFlagged: false,
         metadata: {
           'reason': reason,
-          'type': subjectType,
-          'repository': repoData['full_name'],
+          'type': type,
+          'repository': repoFullName,
+          'number': item['number'],
+          'state': item['state'],
+          'labels': labels,
         },
       );
     }).toList();
 
     return NotificationSummary(
-      unreadCount: unreadCount ?? calculatedUnread,
-      flaggedCount: flaggedCount ?? 0,
-      mentionCount: mentionCount ?? calculatedMentions,
-      assignedIssuesCount: assignedIssuesCount ?? calculatedAssignedIssues,
-      assignedPRsCount: assignedPRsCount ?? calculatedAssignedPRs,
-      reviewRequestsCount: reviewRequestsCount ?? calculatedReviewRequests,
+      assignedIssuesCount: type == 'Issue' ? (assignedIssuesCount ?? total) : 0,
+      assignedPRsCount: type == 'PullRequest' && reason != 'review_requested'
+          ? (assignedPRsCount ?? total)
+          : 0,
+      reviewRequestsCount: reason == 'review_requested'
+          ? (reviewRequestsCount ?? total)
+          : 0,
       items: items,
     );
   }

@@ -51,3 +51,4 @@ xcuserdata/
 # Environment / secrets
 .env
 *.env.local
+build
