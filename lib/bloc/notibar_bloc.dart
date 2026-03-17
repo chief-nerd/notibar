@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../models/account.dart';
 import '../plugins/plugin_interface.dart';
-import '../plugins/outlook/outlook_plugin.dart';
+import '../plugins/microsoft/microsoft_plugin.dart';
 import '../plugins/github/github_plugin.dart';
 import '../plugins/jira/jira_plugin.dart';
 import '../plugins/slack/slack_plugin.dart';
@@ -30,7 +30,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
        _plugins =
            plugins ??
            {
-             ServiceType.outlook: OutlookPlugin(),
+             ServiceType.microsoft: MicrosoftPlugin(),
              ServiceType.github: GithubPlugin(),
              ServiceType.jira: JiraPlugin(),
              ServiceType.slack: SlackPlugin(),

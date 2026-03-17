@@ -6,7 +6,7 @@ import 'package:notibar/plugins/jira/jira_plugin.dart';
 import 'package:notibar/plugins/frappe/frappe_plugin.dart';
 import 'package:notibar/plugins/mattermost/mattermost_plugin.dart';
 import 'package:notibar/plugins/teams/teams_plugin.dart';
-import 'package:notibar/plugins/outlook/outlook_plugin.dart';
+import 'package:notibar/plugins/microsoft/microsoft_plugin.dart';
 import 'package:notibar/plugins/slack/slack_plugin.dart';
 
 void main() {
@@ -100,12 +100,12 @@ void main() {
       expect(summary.items.first.metadata['source'], 'chat');
     });
 
-    test('OutlookPlugin parses messages correctly', () {
+    test('MicrosoftPlugin parses messages correctly', () {
       final fixture = File(
         'test/fixtures/outlook_messages.json',
       ).readAsStringSync();
       final json = jsonDecode(fixture);
-      final plugin = OutlookPlugin();
+      final plugin = MicrosoftPlugin();
 
       final summary = plugin.parseSummary(json);
 

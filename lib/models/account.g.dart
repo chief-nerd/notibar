@@ -6,10 +6,16 @@ part of 'account.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
+/// Handles backward compatibility: 'outlook' → ServiceType.microsoft.
+ServiceType _decodeServiceType(String value) {
+  if (value == 'outlook') return ServiceType.microsoft;
+  return $enumDecode(_$ServiceTypeEnumMap, value);
+}
+
 Account _$AccountFromJson(Map<String, dynamic> json) => Account(
   id: json['id'] as String,
   name: json['name'] as String,
-  serviceType: $enumDecode(_$ServiceTypeEnumMap, json['serviceType']),
+  serviceType: _decodeServiceType(json['serviceType'] as String),
   endpoint: json['endpoint'] as String?,
   apiKey: json['apiKey'] as String?,
   config:
@@ -41,7 +47,7 @@ Map<String, dynamic> _$AccountToJson(Account instance) => <String, dynamic>{
 };
 
 const _$ServiceTypeEnumMap = {
-  ServiceType.outlook: 'outlook',
+  ServiceType.microsoft: 'microsoft',
   ServiceType.github: 'github',
   ServiceType.jira: 'jira',
   ServiceType.slack: 'slack',

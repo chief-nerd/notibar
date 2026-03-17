@@ -1,0 +1,22 @@
+{
+    "data": [
+        {
+            "id": "1",
+            "title": "Example item",
+            "project": "My Project",
+            "updated_at": "2026-01-15T10:30:00Z",
+            "read": false,
+            "flagged": true,
+            "key": "PROJ-1"
+        },
+        {
+            "id": "2",
+            "title": "Another item",
+            "project": "My Project",
+            "updated_at": "2026-01-14T08:00:00Z",
+            "read": true,
+            "flagged": false,
+            "key": "PROJ-2"
+        }
+    ]
+}

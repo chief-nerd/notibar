@@ -7,13 +7,14 @@ import '../models/account.dart';
 import '../models/notification_option.dart';
 import '../services/outlook_auth_service.dart';
 import '../plugins/plugin_interface.dart';
+import '../plugins/microsoft/microsoft_plugin.dart';
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
 String serviceLabel(ServiceType type) {
   switch (type) {
-    case ServiceType.outlook:
-      return 'Office 365 (Outlook)';
+    case ServiceType.microsoft:
+      return 'Microsoft 365';
     case ServiceType.github:
       return 'GitHub';
     case ServiceType.jira:
@@ -33,8 +34,8 @@ String serviceLabel(ServiceType type) {
 
 IconData serviceIcon(ServiceType type) {
   switch (type) {
-    case ServiceType.outlook:
-      return Icons.mail;
+    case ServiceType.microsoft:
+      return Icons.window;
     case ServiceType.github:
       return Icons.code;
     case ServiceType.jira:
@@ -66,6 +67,16 @@ String metricLabel(DisplayMetric metric) {
       return 'Assigned PRs';
     case DisplayMetric.reviewRequests:
       return 'Review Requests';
+    case DisplayMetric.plannerAssigned:
+      return 'Planner: My Tasks';
+    case DisplayMetric.plannerBucket:
+      return 'Planner: Bucket';
+    case DisplayMetric.plannerOpen:
+      return 'Planner: Open';
+    case DisplayMetric.plannerInProgress:
+      return 'Planner: In Progress';
+    case DisplayMetric.plannerCompleted:
+      return 'Planner: Completed';
     case DisplayMetric.all:
       return 'All';
   }
@@ -85,6 +96,16 @@ IconData metricIcon(DisplayMetric metric) {
       return Icons.merge_type;
     case DisplayMetric.reviewRequests:
       return Icons.rate_review_outlined;
+    case DisplayMetric.plannerAssigned:
+      return Icons.person_outline;
+    case DisplayMetric.plannerBucket:
+      return Icons.view_column_outlined;
+    case DisplayMetric.plannerOpen:
+      return Icons.radio_button_unchecked;
+    case DisplayMetric.plannerInProgress:
+      return Icons.pending_outlined;
+    case DisplayMetric.plannerCompleted:
+      return Icons.check_circle_outline;
     case DisplayMetric.all:
       return Icons.all_inbox;
   }
@@ -92,8 +113,17 @@ IconData metricIcon(DisplayMetric metric) {
 
 List<DisplayMetric> supportedMetrics(ServiceType type) {
   switch (type) {
-    case ServiceType.outlook:
-      return [DisplayMetric.unread, DisplayMetric.flagged, DisplayMetric.all];
+    case ServiceType.microsoft:
+      return [
+        DisplayMetric.unread,
+        DisplayMetric.flagged,
+        DisplayMetric.plannerAssigned,
+        DisplayMetric.plannerBucket,
+        DisplayMetric.plannerOpen,
+        DisplayMetric.plannerInProgress,
+        DisplayMetric.plannerCompleted,
+        DisplayMetric.all,
+      ];
     case ServiceType.jira:
       return [
         DisplayMetric.assignedIssues,
@@ -119,7 +149,11 @@ List<DisplayMetric> supportedMetrics(ServiceType type) {
 
 Map<String, String> serviceConfigFields(ServiceType type) {
   switch (type) {
-    case ServiceType.outlook:
+    case ServiceType.microsoft:
+      return {
+        'clientId': 'Azure App Client ID',
+        'tenantId': 'Tenant ID (or "common")',
+      };
     case ServiceType.teams:
       return {
         'clientId': 'Azure App Client ID',
@@ -430,6 +464,9 @@ class _AddOptionDialog extends StatefulWidget {
 class _AddOptionDialogState extends State<_AddOptionDialog> {
   late String _selectedAccountId;
   late DisplayMetric _selectedMetric;
+  List<Map<String, String>> _buckets = [];
+  String? _selectedBucketId;
+  bool _loadingBuckets = false;
 
   @override
   void initState() {
@@ -437,6 +474,26 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
     final firstAccount = widget.accounts.first;
     _selectedAccountId = firstAccount.id;
     _selectedMetric = supportedMetrics(firstAccount.serviceType).first;
+  }
+
+  Future<void> _loadBuckets(Account account) async {
+    if (account.serviceType != ServiceType.microsoft) return;
+    final planId = account.config['planId'];
+    final token = account.apiKey;
+    if (planId == null || planId.isEmpty || token == null || token.isEmpty) {
+      setState(() { _buckets = []; _selectedBucketId = null; });
+      return;
+    }
+
+    setState(() => _loadingBuckets = true);
+    final buckets = await MicrosoftPlugin.fetchBucketsForPlan(token, planId);
+    if (mounted) {
+      setState(() {
+        _buckets = buckets;
+        _selectedBucketId = buckets.isNotEmpty ? buckets.first['id'] : null;
+        _loadingBuckets = false;
+      });
+    }
   }
 
   @override
@@ -512,9 +569,48 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
                   setState(() {
                     _selectedMetric = v;
                   });
+                  if (v == DisplayMetric.plannerBucket) {
+                    final account = widget.accounts.firstWhere(
+                      (a) => a.id == _selectedAccountId,
+                    );
+                    _loadBuckets(account);
+                  }
                 }
               },
             ),
+            if (_selectedMetric == DisplayMetric.plannerBucket) ...[
+              const SizedBox(height: 16),
+              if (_loadingBuckets)
+                const Center(child: Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ))
+              else if (_buckets.isEmpty)
+                const Text(
+                  'No buckets found. Make sure a Planner plan is selected in the account settings.',
+                  style: TextStyle(color: Colors.orange, fontSize: 12),
+                )
+              else
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedBucketId,
+                  decoration: const InputDecoration(
+                    labelText: 'Bucket',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.view_column_outlined),
+                  ),
+                  items: _buckets.map((b) {
+                    return DropdownMenuItem(
+                      value: b['id'],
+                      child: Text(b['name'] ?? ''),
+                    );
+                  }).toList(),
+                  onChanged: (v) {
+                    if (v != null) {
+                      setState(() => _selectedBucketId = v);
+                    }
+                  },
+                ),
+            ],
           ],
         ),
       ),
@@ -528,12 +624,27 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
             final account = widget.accounts.firstWhere(
               (a) => a.id == _selectedAccountId,
             );
-            final label = '${account.name} — ${metricLabel(_selectedMetric)}';
+            var label = '${account.name} — ${metricLabel(_selectedMetric)}';
+            var config = <String, String>{};
+
+            // Add bucket config for plannerBucket metric
+            if (_selectedMetric == DisplayMetric.plannerBucket &&
+                _selectedBucketId != null) {
+              final bucket = _buckets.firstWhere(
+                (b) => b['id'] == _selectedBucketId,
+                orElse: () => {},
+              );
+              config['bucketId'] = _selectedBucketId!;
+              config['bucketName'] = bucket['name'] ?? '';
+              label = '${account.name} — ${bucket['name'] ?? 'Bucket'}';
+            }
+
             final option = NotificationOption(
               id: DateTime.now().millisecondsSinceEpoch.toString(),
               accountId: _selectedAccountId,
               label: label,
               metric: _selectedMetric,
+              config: config,
             );
             context.read<NotibarBloc>().add(AddNotificationOption(option));
             Navigator.pop(context);
@@ -682,10 +793,12 @@ class _AccountCard extends StatelessWidget {
                 ],
               ),
             ),
-            if ((account.serviceType == ServiceType.outlook ||
+            if ((account.serviceType == ServiceType.microsoft ||
                     account.serviceType == ServiceType.teams) &&
                 isConfigured)
               _LoginButton(account: account, hasToken: hasToken),
+            if (account.serviceType == ServiceType.microsoft && hasToken)
+              _PlanPickerButton(account: account),
             IconButton(
               icon: const Icon(Icons.settings_outlined, size: 20),
               tooltip: 'Configure',
@@ -882,6 +995,114 @@ class _LoginButton extends StatelessWidget {
   }
 }
 
+// ─── Plan Picker Button ─────────────────────────────────────────
+
+class _PlanPickerButton extends StatelessWidget {
+  final Account account;
+
+  const _PlanPickerButton({required this.account});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPlan = account.config['planId'] != null &&
+        account.config['planId']!.isNotEmpty;
+    final planName = account.config['planName'] ?? '';
+
+    return TextButton.icon(
+      icon: Icon(
+        hasPlan ? Icons.check_circle_outline : Icons.assignment_outlined,
+        size: 16,
+        color: hasPlan ? Colors.green : null,
+      ),
+      label: Text(
+        hasPlan ? planName : 'Select Plan',
+        style: const TextStyle(fontSize: 12),
+        overflow: TextOverflow.ellipsis,
+      ),
+      onPressed: () => _pickPlan(context),
+    );
+  }
+
+  Future<void> _pickPlan(BuildContext context) async {
+    final token = account.apiKey;
+    if (token == null || token.isEmpty) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Loading plans...')),
+    );
+
+    final plans = await MicrosoftPlugin.fetchAvailablePlans(token);
+
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).clearSnackBars();
+
+    if (plans.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No Planner plans found. Make sure you have access to Microsoft 365 groups with plans.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final selected = await showDialog<Map<String, String>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Select Planner Board'),
+        content: SizedBox(
+          width: 400,
+          height: 300,
+          child: ListView.builder(
+            itemCount: plans.length,
+            itemBuilder: (ctx, i) {
+              final plan = plans[i];
+              final isSelected = plan['id'] == account.config['planId'];
+              return ListTile(
+                leading: Icon(
+                  isSelected ? Icons.check_circle : Icons.assignment_outlined,
+                  color: isSelected ? Colors.green : null,
+                ),
+                title: Text(plan['title'] ?? ''),
+                subtitle: Text(plan['groupName'] ?? ''),
+                selected: isSelected,
+                onTap: () => Navigator.pop(ctx, plan),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          if (account.config['planId'] != null)
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, {'id': '', 'title': '', 'groupName': ''}),
+              child: const Text('Clear'),
+            ),
+        ],
+      ),
+    );
+
+    if (selected == null || !context.mounted) return;
+
+    final updatedConfig = Map<String, String>.from(account.config);
+    if (selected['id']!.isEmpty) {
+      updatedConfig.remove('planId');
+      updatedConfig.remove('planName');
+    } else {
+      updatedConfig['planId'] = selected['id']!;
+      updatedConfig['planName'] = selected['title']!;
+    }
+
+    context.read<NotibarBloc>().add(
+      UpdateAccount(account.copyWith(config: updatedConfig)),
+    );
+  }
+}
+
 // ─── Add Account Dialog ──────────────────────────────────────────
 
 class _AddAccountDialog extends StatefulWidget {
@@ -894,7 +1115,7 @@ class _AddAccountDialog extends StatefulWidget {
 class _AddAccountDialogState extends State<_AddAccountDialog> {
   final _nameController = TextEditingController();
   final _apiKeyController = TextEditingController();
-  ServiceType _selectedType = ServiceType.outlook;
+  ServiceType _selectedType = ServiceType.microsoft;
   final Map<String, TextEditingController> _configControllers = {};
 
   @override
@@ -974,7 +1195,7 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
                   prefixIcon: Icon(Icons.label_outline),
                 ),
               ),
-              if (_selectedType != ServiceType.outlook &&
+              if (_selectedType != ServiceType.microsoft &&
                   _selectedType != ServiceType.teams) ...[
                 const SizedBox(height: 16),
                 TextField(
@@ -1146,7 +1367,7 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
                   hintText: 'Leave empty for default',
                 ),
               ),
-              if (widget.account.serviceType != ServiceType.outlook &&
+              if (widget.account.serviceType != ServiceType.microsoft &&
                   widget.account.serviceType != ServiceType.teams) ...[
                 const SizedBox(height: 12),
                 TextField(

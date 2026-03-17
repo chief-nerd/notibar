@@ -24,6 +24,8 @@ class OutlookAuthService {
     'profile',
     'offline_access',
     'Mail.Read',
+    'Tasks.Read',
+    'Group.Read.All',
   ];
 
   OutlookAuthService({required this.clientId, this.tenantId = 'common'});

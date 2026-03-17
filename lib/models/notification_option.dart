@@ -8,6 +8,11 @@ enum DisplayMetric {
   assignedIssues, 
   assignedPRs, 
   reviewRequests,
+  plannerAssigned,
+  plannerBucket,
+  plannerOpen,
+  plannerInProgress,
+  plannerCompleted,
   all 
 }
 
@@ -20,6 +25,7 @@ class NotificationOption extends Equatable {
   final DisplayMetric metric;
   final bool enabled;
   final int sortOrder;
+  final Map<String, String> config;
 
   const NotificationOption({
     required this.id,
@@ -28,6 +34,7 @@ class NotificationOption extends Equatable {
     this.metric = DisplayMetric.unread,
     this.enabled = true,
     this.sortOrder = 0,
+    this.config = const {},
   });
 
   NotificationOption copyWith({
@@ -37,6 +44,7 @@ class NotificationOption extends Equatable {
     DisplayMetric? metric,
     bool? enabled,
     int? sortOrder,
+    Map<String, String>? config,
   }) {
     return NotificationOption(
       id: id ?? this.id,
@@ -45,6 +53,7 @@ class NotificationOption extends Equatable {
       metric: metric ?? this.metric,
       enabled: enabled ?? this.enabled,
       sortOrder: sortOrder ?? this.sortOrder,
+      config: config ?? this.config,
     );
   }
 
@@ -59,6 +68,9 @@ class NotificationOption extends Equatable {
       ),
       enabled: json['enabled'] as bool? ?? true,
       sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
+      config: (json['config'] as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(k, e as String),
+      ) ?? const {},
     );
   }
 
@@ -69,8 +81,9 @@ class NotificationOption extends Equatable {
     'metric': metric.name,
     'enabled': enabled,
     'sortOrder': sortOrder,
+    'config': config,
   };
 
   @override
-  List<Object?> get props => [id, accountId, label, metric, enabled, sortOrder];
+  List<Object?> get props => [id, accountId, label, metric, enabled, sortOrder, config];
 }

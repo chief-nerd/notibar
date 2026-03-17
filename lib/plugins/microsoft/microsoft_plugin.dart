@@ -7,11 +7,11 @@ import '../../models/notification_item.dart';
 import '../../services/outlook_auth_service.dart';
 import '../plugin_interface.dart';
 
-const _tag = '[Outlook]';
+const _tag = '[Microsoft]';
 
-class OutlookPlugin implements NotibarPlugin {
+class MicrosoftPlugin implements NotibarPlugin {
   @override
-  ServiceType get serviceType => ServiceType.outlook;
+  ServiceType get serviceType => ServiceType.microsoft;
 
   @override
   Future<NotificationSummary> fetchNotifications(Account account) async {
@@ -20,7 +20,7 @@ class OutlookPlugin implements NotibarPlugin {
       return NotificationSummary.withError(
         PluginError(
           type: PluginErrorType.authentication,
-          message: 'Outlook API key (token) is missing',
+          message: 'Microsoft API token is missing',
         ),
       );
     }
@@ -158,11 +158,29 @@ class OutlookPlugin implements NotibarPlugin {
           .where((m) => m['isRead'] != true)
           .length;
 
+      // Fetch Planner tasks if a plan is configured
+      final planId = account.config['planId'];
+      List<dynamic> plannerTasks = [];
+      Map<String, String> bucketMap = {};
+      if (planId != null && planId.isNotEmpty) {
+        final plannerResults = await Future.wait([
+          _fetchPlannerTasks(token, planId),
+          _fetchPlannerBuckets(token, planId),
+        ]);
+        plannerTasks = plannerResults[0] as List<dynamic>;
+        bucketMap = plannerResults[1] as Map<String, String>;
+        debugPrint(
+          '$_tag fetched ${plannerTasks.length} planner tasks, ${bucketMap.length} buckets (${stopwatch.elapsedMilliseconds}ms)',
+        );
+      }
+
       return parseSummary(
         {
           'value': allMessages,
           'folderMap': folderMap,
           'inboxFolderId': inboxFolderId,
+          'plannerTasks': plannerTasks,
+          'bucketMap': bucketMap,
         },
         unreadCount: inboxUnreadCount,
         flaggedCount: flaggedCount,
@@ -196,6 +214,8 @@ class OutlookPlugin implements NotibarPlugin {
     final List<dynamic> messages = json['value'] ?? [];
     final folderMap = (json['folderMap'] as Map<String, String>?) ?? {};
     final inboxFolderId = (json['inboxFolderId'] as String?) ?? '';
+    final List<dynamic> plannerTasks = json['plannerTasks'] ?? [];
+    final bucketMap = (json['bucketMap'] as Map<String, String>?) ?? {};
 
     final items = messages.map((m) {
       final fromData = m['from']?['emailAddress'];
@@ -232,10 +252,69 @@ class OutlookPlugin implements NotibarPlugin {
       );
     }).toList()..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
+    // Parse Planner tasks
+    final taskItems = plannerTasks.map((t) {
+      final title = t['title'] as String? ?? '(No Title)';
+      final bucketId = t['bucketId'] as String? ?? '';
+      final bucketName = bucketMap[bucketId] ?? '';
+      final percentComplete = t['percentComplete'] as int? ?? 0;
+      
+      String status;
+      if (percentComplete == 100) {
+        status = 'completed';
+      } else if (percentComplete > 0) {
+        status = 'inProgress';
+      } else {
+        status = 'open';
+      }
+
+      DateTime? dueDate;
+      try {
+        if (t['dueDateTime'] != null) {
+          dueDate = DateTime.parse(t['dueDateTime']);
+        }
+      } catch (_) {}
+
+      DateTime? createdDate;
+      try {
+        if (t['createdDateTime'] != null) {
+          createdDate = DateTime.parse(t['createdDateTime']);
+        }
+      } catch (_) {}
+
+      final assignments = t['assignments'] as Map<String, dynamic>? ?? {};
+      final assigneeCount = assignments.length;
+
+      // Build a web link to the task in Planner
+      final taskId = t['id'] as String? ?? '';
+
+      return NotificationItem(
+        id: 'planner_$taskId',
+        title: title,
+        subtitle: bucketName.isNotEmpty ? bucketName : null,
+        timestamp: dueDate ?? createdDate ?? DateTime.now(),
+        actionUrl: 'https://tasks.office.com',
+        isUnread: status != 'completed',
+        isFlagged: dueDate != null && dueDate.isBefore(DateTime.now()) && status != 'completed',
+        metadata: {
+          'source': 'planner',
+          'taskId': taskId,
+          'bucketId': bucketId,
+          'bucketName': bucketName,
+          'status': status,
+          'percentComplete': percentComplete,
+          'assigneeCount': assigneeCount,
+          'priority': t['priority'] ?? 1,
+        },
+      );
+    }).toList()..sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+    final allItems = [...items, ...taskItems];
+
     return NotificationSummary(
       unreadCount: unreadCount ?? items.where((i) => i.isUnread).length,
       flaggedCount: flaggedCount ?? items.where((i) => i.isFlagged).length,
-      items: items,
+      items: allItems,
     );
   }
 
@@ -400,6 +479,206 @@ class OutlookPlugin implements NotibarPlugin {
     } catch (e) {
       debugPrint('$_tag _fetchCount($filter) exception: $e');
       return 0;
+    }
+  }
+
+  // ── Planner API ─────────────────────────────────────────────
+
+  /// Fetches all tasks for the given Planner plan.
+  Future<List<dynamic>> _fetchPlannerTasks(String token, String planId) async {
+    try {
+      final allTasks = <dynamic>[];
+      Uri? nextUri = Uri.https(
+        'graph.microsoft.com',
+        '/v1.0/planner/plans/$planId/tasks',
+        {r'$top': '50'},
+      );
+
+      while (nextUri != null) {
+        final response = await http
+            .get(
+              nextUri,
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Accept': 'application/json',
+              },
+            )
+            .timeout(const Duration(seconds: 15));
+
+        if (response.statusCode != 200) {
+          debugPrint(
+            '$_tag _fetchPlannerTasks failed: ${response.statusCode}',
+          );
+          return allTasks;
+        }
+
+        final data = json.decode(response.body);
+        final tasks = data['value'] as List<dynamic>? ?? [];
+        allTasks.addAll(tasks);
+
+        final nextLink = data['@odata.nextLink'] as String?;
+        nextUri = nextLink != null ? Uri.parse(nextLink) : null;
+      }
+
+      debugPrint('$_tag _fetchPlannerTasks OK: ${allTasks.length} tasks');
+      return allTasks;
+    } catch (e) {
+      debugPrint('$_tag _fetchPlannerTasks exception: $e');
+      return [];
+    }
+  }
+
+  /// Fetches all buckets for a plan, returning a map of bucketId → name.
+  Future<Map<String, String>> _fetchPlannerBuckets(
+    String token,
+    String planId,
+  ) async {
+    try {
+      final uri = Uri.https(
+        'graph.microsoft.com',
+        '/v1.0/planner/plans/$planId/buckets',
+      );
+      final response = await http
+          .get(
+            uri,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          '$_tag _fetchPlannerBuckets failed: ${response.statusCode}',
+        );
+        return {};
+      }
+
+      final data = json.decode(response.body);
+      final buckets = data['value'] as List<dynamic>? ?? [];
+      final map = <String, String>{};
+      for (final b in buckets) {
+        final id = b['id'] as String?;
+        final name = b['name'] as String?;
+        if (id != null && name != null) map[id] = name;
+      }
+      debugPrint(
+        '$_tag _fetchPlannerBuckets OK: ${map.length} buckets (${map.values.join(', ')})',
+      );
+      return map;
+    } catch (e) {
+      debugPrint('$_tag _fetchPlannerBuckets exception: $e');
+      return {};
+    }
+  }
+
+  /// Fetches all plans accessible to the user (via their groups).
+  /// Returns a list of {id, title, groupName} maps.
+  static Future<List<Map<String, String>>> fetchAvailablePlans(
+    String token,
+  ) async {
+    try {
+      // Get user's groups
+      final groupsUri = Uri.https(
+        'graph.microsoft.com',
+        '/v1.0/me/memberOf/microsoft.graph.group',
+        {r'$select': 'id,displayName', r'$top': '100'},
+      );
+      final groupsResponse = await http
+          .get(
+            groupsUri,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (groupsResponse.statusCode != 200) {
+        debugPrint('$_tag fetchAvailablePlans groups failed: ${groupsResponse.statusCode}');
+        return [];
+      }
+
+      final groupsData = json.decode(groupsResponse.body);
+      final groups = groupsData['value'] as List<dynamic>? ?? [];
+
+      // Fetch plans for each group (in sequence to avoid 429 throttling)
+      final plans = <Map<String, String>>[];
+      for (final group in groups) {
+        final groupId = group['id'] as String? ?? '';
+        final groupName = group['displayName'] as String? ?? '';
+        if (groupId.isEmpty) continue;
+
+        final plansUri = Uri.https(
+          'graph.microsoft.com',
+          '/v1.0/groups/$groupId/planner/plans',
+          {r'$select': 'id,title'},
+        );
+        final plansResponse = await http
+            .get(
+              plansUri,
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Accept': 'application/json',
+              },
+            )
+            .timeout(const Duration(seconds: 10));
+
+        if (plansResponse.statusCode == 200) {
+          final plansData = json.decode(plansResponse.body);
+          final groupPlans = plansData['value'] as List<dynamic>? ?? [];
+          for (final p in groupPlans) {
+            plans.add({
+              'id': p['id'] as String? ?? '',
+              'title': p['title'] as String? ?? '',
+              'groupName': groupName,
+            });
+          }
+        }
+      }
+
+      debugPrint('$_tag fetchAvailablePlans OK: ${plans.length} plans');
+      return plans;
+    } catch (e) {
+      debugPrint('$_tag fetchAvailablePlans exception: $e');
+      return [];
+    }
+  }
+
+  /// Fetches buckets for a given plan. Used by UI for bucket selection.
+  static Future<List<Map<String, String>>> fetchBucketsForPlan(
+    String token,
+    String planId,
+  ) async {
+    try {
+      final uri = Uri.https(
+        'graph.microsoft.com',
+        '/v1.0/planner/plans/$planId/buckets',
+      );
+      final response = await http
+          .get(
+            uri,
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode != 200) return [];
+
+      final data = json.decode(response.body);
+      final buckets = data['value'] as List<dynamic>? ?? [];
+      return buckets
+          .map((b) => {
+                'id': b['id'] as String? ?? '',
+                'name': b['name'] as String? ?? '',
+              })
+          .toList();
+    } catch (e) {
+      debugPrint('$_tag fetchBucketsForPlan exception: $e');
+      return [];
     }
   }
 }

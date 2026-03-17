@@ -26,7 +26,7 @@ void main() {
     final testAccount = const Account(
       id: '1',
       name: 'Test',
-      serviceType: ServiceType.outlook,
+      serviceType: ServiceType.microsoft,
     );
     final testOption = const NotificationOption(
       id: 'opt_1',
@@ -42,7 +42,7 @@ void main() {
 
       registerFallbackValue(testAccount);
 
-      when(() => mockPlugin.serviceType).thenReturn(ServiceType.outlook);
+      when(() => mockPlugin.serviceType).thenReturn(ServiceType.microsoft);
       when(() => mockPlugin.fetchNotifications(any())).thenAnswer(
         (_) async =>
             NotificationSummary(unreadCount: 5, flaggedCount: 2, items: []),
@@ -58,7 +58,7 @@ void main() {
         accountRepository: mockRepo,
         optionRepository: mockOptionRepo,
         plugins: {
-          ServiceType.outlook: mockPlugin,
+          ServiceType.microsoft: mockPlugin,
         },
       );
     });

@@ -7,13 +7,13 @@ void main() {
       const account1 = Account(
         id: '1',
         name: 'Work',
-        serviceType: ServiceType.outlook,
+        serviceType: ServiceType.microsoft,
         apiKey: 'token123',
       );
       const account2 = Account(
         id: '1',
         name: 'Work',
-        serviceType: ServiceType.outlook,
+        serviceType: ServiceType.microsoft,
         apiKey: 'token123',
       );
       expect(account1, equals(account2));
@@ -23,7 +23,7 @@ void main() {
       const account = Account(
         id: '1',
         name: 'Work',
-        serviceType: ServiceType.outlook,
+        serviceType: ServiceType.microsoft,
       );
       expect(account.pollingInterval, const Duration(minutes: 5));
     });

@@ -3,9 +3,17 @@
 ## Open
 
 - [ ] Port MultiStatusItemPlugin to Windows/Linux (currently macOS only)
+- [ ] Add "Select Plan" auto-discovery UI for Planner plan selection (currently fetches from user's M365 groups — may need additional permissions for some orgs)
+- [ ] Existing users with `ServiceType.outlook` accounts will auto-migrate via backward-compat in account.g.dart, but need to re-login for Planner scopes (`Tasks.Read`, `Group.Read.All`)
+- [ ] Consider merging Teams plugin into Microsoft plugin for a unified M365 experience
 
 ## Completed
 
+- [x] **Rename Outlook → Microsoft 365**: `ServiceType.outlook` → `ServiceType.microsoft`, all UI labels and plugin classes updated. Backward-compatible deserialization preserves existing accounts.
+- [x] **Add MS Planner Tasks support** under the Microsoft plugin: fetches tasks for a selected plan, with display metrics for My Tasks, by Bucket, Open, In Progress, and Completed
+- [x] `NotificationOption.config` map added to support per-option settings (e.g., bucket selection for Planner)
+- [x] OAuth scopes updated to include `Tasks.Read` and `Group.Read.All` for Planner access
+- [x] Tray manager supports Planner metrics with emoji indicators, per-bucket filtering, and task status display
 - [x] Fix GitHub assigned issues/PRs/review requests showing 0 — was counting from notifications inbox `reason` field only; now uses GitHub Search API (`/search/issues`) for real counts
 - [x] macOS menu bar app running as `.accessory` (no dock icon, tray-only)
 - [x] `NotibarBloc` with full event/state cycle: load, refresh, add/remove/update accounts, polling

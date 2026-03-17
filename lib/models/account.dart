@@ -3,7 +3,7 @@ import 'package:json_annotation/json_annotation.dart';
 
 part 'account.g.dart';
 
-enum ServiceType { outlook, github, jira, slack, teams, frappe, mattermost, custom }
+enum ServiceType { microsoft, github, jira, slack, teams, frappe, mattermost, custom }
 
 @JsonSerializable()
 class Account extends Equatable {

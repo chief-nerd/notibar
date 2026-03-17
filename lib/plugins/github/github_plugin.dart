@@ -115,8 +115,9 @@ class GithubPlugin implements NotibarPlugin {
     String type,
     String reason,
   ) {
-    if (response.statusCode != 200)
+    if (response.statusCode != 200) {
       return (count: 0, items: <NotificationItem>[]);
+    }
     final body = json.decode(response.body);
     final total = (body['total_count'] as num?)?.toInt() ?? 0;
     final List<dynamic> searchItems = body['items'] ?? [];

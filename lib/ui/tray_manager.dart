@@ -106,24 +106,24 @@ class TrayManager {
 
       final itemId = option.id;
 
-      final icon = _emojiForMetric(option.metric);
+      final icon = _sfSymbolForMetric(option.metric);
 
       if (summary == null) {
         newItemIds.add(itemId);
-        await _channel.update(itemId, '$icon –');
+        await _channel.update(itemId, '–', iconName: icon);
         debugPrint('$_tag  ${option.label}: no data yet');
         continue;
       }
 
       if (summary.error != null) {
         newItemIds.add(itemId);
-        await _channel.update(itemId, '$icon ⚠');
+        await _channel.update(itemId, '⚠', iconName: icon);
         await _setErrorMenu(itemId, summary.error!);
         debugPrint('$_tag  ${option.label}: error — ${summary.error}');
         continue;
       }
 
-      final count = _countForMetric(summary, option.metric);
+      final count = _countForMetric(summary, option.metric, option.config);
       if (count == 0) {
         debugPrint('$_tag  ${option.label}: count=0, hiding');
         // Hide item if count is 0 to save space
@@ -131,10 +131,10 @@ class TrayManager {
       }
 
       newItemIds.add(itemId);
-      await _channel.update(itemId, '$icon $count');
+      await _channel.update(itemId, '$count', iconName: icon);
 
       // Build dropdown menu with notification items.
-      final filteredItems = _filterItems(summary, option.metric);
+      final filteredItems = _filterItems(summary, option.metric, option.config);
       await _setOptionMenu(itemId, option.accountId, filteredItems);
       debugPrint(
         '$_tag  ${option.label}: $icon $count (${filteredItems.length} menu items)',
@@ -254,6 +254,29 @@ class TrayManager {
 
   StatusMenuItem _buildMenuEntry(NotificationItem item) {
     final type = item.metadata['type'] as String?;
+    final source = item.metadata['source'] as String?;
+
+    // Planner items: line 1 = task title, line 2 = bucket + status
+    if (source == 'planner') {
+      var title = item.title;
+      if (title.length > 60) title = '${title.substring(0, 57)}...';
+      final status = item.metadata['status'] as String? ?? '';
+      final bucket = item.metadata['bucketName'] as String? ?? '';
+      final statusIcon = switch (status) {
+        'completed' => '✅',
+        'inProgress' => '🔄',
+        _ => '⬚',
+      };
+      final parts = [statusIcon, title];
+      final line1 = parts.join(' ');
+      final line2 = bucket.isNotEmpty ? bucket : null;
+
+      return StatusMenuItem(
+        label: line1,
+        subtitle: line2,
+        hasCallback: item.actionUrl.isNotEmpty,
+      );
+    }
 
     // GitHub items: line 1 = #number title, line 2 = repo + labels
     if (type == 'Issue' || type == 'PullRequest') {
@@ -313,26 +336,42 @@ class TrayManager {
 
   // ── Helpers ───────────────────────────────────────────────────
 
-  String _emojiForMetric(DisplayMetric metric) {
+  /// Returns an SF Symbol name for the given metric.
+  /// Browse available symbols at https://developer.apple.com/sf-symbols/
+  String _sfSymbolForMetric(DisplayMetric metric) {
     switch (metric) {
       case DisplayMetric.unread:
-        return '📧';
+        return 'envelope.badge';
       case DisplayMetric.flagged:
-        return '🚩';
+        return 'flag';
       case DisplayMetric.mentions:
-        return '@';
+        return 'tag';
       case DisplayMetric.assignedIssues:
-        return '🎫';
+        return 'ticket';
       case DisplayMetric.assignedPRs:
-        return '⤴️';
+        return 'arrow.trianglehead.pull';
       case DisplayMetric.reviewRequests:
-        return '👀';
+        return 'eye';
+      case DisplayMetric.plannerAssigned:
+        return 'person.badge.plus';
+      case DisplayMetric.plannerBucket:
+        return 'tray.2';
+      case DisplayMetric.plannerOpen:
+        return 'paperplane.circle';
+      case DisplayMetric.plannerInProgress:
+        return 'arrow.trianglehead.2.clockwise.rotate.90.circle';
+      case DisplayMetric.plannerCompleted:
+        return 'checkmark.circle';
       case DisplayMetric.all:
-        return '📬';
+        return 'tray.full';
     }
   }
 
-  int _countForMetric(NotificationSummary summary, DisplayMetric metric) {
+  int _countForMetric(
+    NotificationSummary summary,
+    DisplayMetric metric, [
+    Map<String, String> config = const {},
+  ]) {
     switch (metric) {
       case DisplayMetric.unread:
         return summary.unreadCount;
@@ -346,6 +385,49 @@ class TrayManager {
         return summary.assignedPRsCount;
       case DisplayMetric.reviewRequests:
         return summary.reviewRequestsCount;
+      case DisplayMetric.plannerAssigned:
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] != 'completed',
+            )
+            .length;
+      case DisplayMetric.plannerBucket:
+        // Bucket filtering is handled via option.config['bucketId']
+        final bucketId = config['bucketId'] ?? '';
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] != 'completed' &&
+                  (bucketId.isEmpty || i.metadata['bucketId'] == bucketId),
+            )
+            .length;
+      case DisplayMetric.plannerOpen:
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] == 'open',
+            )
+            .length;
+      case DisplayMetric.plannerInProgress:
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] == 'inProgress',
+            )
+            .length;
+      case DisplayMetric.plannerCompleted:
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] == 'completed',
+            )
+            .length;
       case DisplayMetric.all:
         return summary.items.length;
     }
@@ -353,8 +435,9 @@ class TrayManager {
 
   List<NotificationItem> _filterItems(
     NotificationSummary summary,
-    DisplayMetric metric,
-  ) {
+    DisplayMetric metric, [
+    Map<String, String> config = const {},
+  ]) {
     switch (metric) {
       case DisplayMetric.unread:
         return summary.items.where((i) => i.isUnread).toList();
@@ -381,6 +464,48 @@ class TrayManager {
               (i) =>
                   i.metadata['type'] == 'PullRequest' &&
                   i.metadata['reason'] == 'review_requested',
+            )
+            .toList();
+      case DisplayMetric.plannerAssigned:
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] != 'completed',
+            )
+            .toList();
+      case DisplayMetric.plannerBucket:
+        final bucketId = config['bucketId'] ?? '';
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] != 'completed' &&
+                  (bucketId.isEmpty || i.metadata['bucketId'] == bucketId),
+            )
+            .toList();
+      case DisplayMetric.plannerOpen:
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] == 'open',
+            )
+            .toList();
+      case DisplayMetric.plannerInProgress:
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] == 'inProgress',
+            )
+            .toList();
+      case DisplayMetric.plannerCompleted:
+        return summary.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] == 'completed',
             )
             .toList();
       case DisplayMetric.all:

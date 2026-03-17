@@ -82,6 +82,10 @@ When you first launch Notibar, a ⚙ gear icon appears in the menu bar. Click it
 
 **Notifications tab** — Add tray items. Each notification option ties an account to a display metric (e.g., "GitHub → Assigned PRs"). Drag to reorder, toggle to show/hide.
 
+### Menu Bar Icons
+
+Tray icons use [SF Symbols](https://developer.apple.com/sf-symbols/) — Apple's system icon library with 6,000+ symbols. Download the SF Symbols app to browse and search for icons. Symbol names are mapped per metric in `_sfSymbolForMetric()` in [lib/ui/tray_manager.dart](lib/ui/tray_manager.dart).
+
 ## Development
 
 ```bash
