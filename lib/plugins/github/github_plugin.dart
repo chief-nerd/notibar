@@ -1,13 +1,88 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../models/account.dart';
 import '../../models/notification_item.dart';
+import '../../services/multi_status_item_channel.dart';
 import '../plugin_interface.dart';
 
-class GithubPlugin implements NotibarPlugin {
+class GithubPlugin extends NotibarPlugin {
   @override
   ServiceType get serviceType => ServiceType.github;
+
+  @override
+  String get serviceLabel => 'GitHub';
+
+  @override
+  IconData get serviceIcon => Icons.code;
+
+  @override
+  Map<String, String> get configFields => {
+    'owner': 'Repository Owner',
+    'repo': 'Repository Name',
+  };
+
+  @override
+  List<MetricDefinition> get supportedMetrics => [
+    MetricDefinition(
+      id: 'assignedIssues',
+      label: 'Assigned Issues',
+      sfSymbol: 'ticket',
+      materialIcon: Icons.assignment_ind_outlined,
+      count: (s, _) => s.assignedIssuesCount,
+      filter: (s, _) =>
+          s.items.where((i) => i.metadata['type'] == 'Issue').toList(),
+    ),
+    MetricDefinition(
+      id: 'assignedPRs',
+      label: 'Assigned PRs',
+      sfSymbol: 'arrow.trianglehead.pull',
+      materialIcon: Icons.merge_type,
+      count: (s, _) => s.assignedPRsCount,
+      filter: (s, _) => s.items
+          .where(
+            (i) =>
+                i.metadata['type'] == 'PullRequest' &&
+                i.metadata['reason'] != 'review_requested',
+          )
+          .toList(),
+    ),
+    MetricDefinition(
+      id: 'reviewRequests',
+      label: 'Review Requests',
+      sfSymbol: 'eye',
+      materialIcon: Icons.rate_review_outlined,
+      count: (s, _) => s.reviewRequestsCount,
+      filter: (s, _) => s.items
+          .where(
+            (i) =>
+                i.metadata['type'] == 'PullRequest' &&
+                i.metadata['reason'] == 'review_requested',
+          )
+          .toList(),
+    ),
+  ];
+
+  @override
+  StatusMenuItem formatMenuEntry(NotificationItem item) {
+    final number = item.metadata['number'];
+    var title = item.title;
+    if (title.length > 60) title = '${title.substring(0, 57)}...';
+    final line1 = number != null ? '#$number $title' : title;
+
+    final repo = item.subtitle ?? '';
+    final labels =
+        (item.metadata['labels'] as List<dynamic>?)?.cast<String>() ?? [];
+    final labelStr = labels.map((l) => '[$l]').join(' ');
+    final line2 = [repo, if (labelStr.isNotEmpty) labelStr].join('  ');
+
+    return StatusMenuItem(
+      label: line1,
+      subtitle: line2.isNotEmpty ? line2 : null,
+      hasCallback: item.actionUrl.isNotEmpty,
+    );
+  }
 
   @override
   Future<NotificationSummary> fetchNotifications(Account account) async {

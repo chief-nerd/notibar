@@ -1,35 +1,90 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../models/account.dart';
 import '../../models/notification_item.dart';
+import '../../services/multi_status_item_channel.dart';
 import '../plugin_interface.dart';
 
-class TeamsPlugin implements NotibarPlugin {
+class TeamsPlugin extends NotibarPlugin {
   @override
   ServiceType get serviceType => ServiceType.teams;
+
+  @override
+  String get serviceLabel => 'Microsoft Teams';
+
+  @override
+  IconData get serviceIcon => Icons.group;
+
+  @override
+  Map<String, String> get configFields => {
+    'clientId': 'Azure App Client ID',
+    'tenantId': 'Tenant ID (or "common")',
+  };
+
+  @override
+  List<MetricDefinition> get supportedMetrics => [
+    MetricDefinition(
+      id: 'unread',
+      label: 'Unread',
+      sfSymbol: 'envelope.badge',
+      materialIcon: Icons.mark_email_unread_outlined,
+      count: (s, _) => s.unreadCount,
+      filter: (s, _) => s.items.where((i) => i.isUnread).toList(),
+    ),
+    MetricDefinition(
+      id: 'mentions',
+      label: 'Mentions',
+      sfSymbol: 'tag',
+      materialIcon: Icons.alternate_email,
+      count: (s, _) => s.mentionCount,
+      filter: (s, _) => s.items.where((i) => i.isFlagged).toList(),
+    ),
+  ];
+
+  @override
+  StatusMenuItem formatMenuEntry(NotificationItem item) {
+    var title = item.title;
+    if (title.length > 60) title = '${title.substring(0, 57)}...';
+    return StatusMenuItem(
+      label: title,
+      subtitle: item.subtitle,
+      hasCallback: item.actionUrl.isNotEmpty,
+    );
+  }
 
   @override
   Future<NotificationSummary> fetchNotifications(Account account) async {
     final token = account.apiKey;
     if (token == null || token.isEmpty) {
       return NotificationSummary.withError(
-        PluginError(type: PluginErrorType.authentication, message: 'Microsoft Teams token is missing'),
+        PluginError(
+          type: PluginErrorType.authentication,
+          message: 'Microsoft Teams token is missing',
+        ),
       );
     }
 
     try {
-      final chatResponse = await http.get(
-        Uri.parse("https://graph.microsoft.com/v1.0/me/chats?\$filter=viewType eq 'unread'"),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 15));
+      final chatResponse = await http
+          .get(
+            Uri.parse(
+              "https://graph.microsoft.com/v1.0/me/chats?\$filter=viewType eq 'unread'",
+            ),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (chatResponse.statusCode == 401) {
         return NotificationSummary.withError(
-          PluginError(type: PluginErrorType.authentication, message: 'Teams authentication failed'),
+          PluginError(
+            type: PluginErrorType.authentication,
+            message: 'Teams authentication failed',
+          ),
         );
       }
 
@@ -43,20 +98,22 @@ class TeamsPlugin implements NotibarPlugin {
         items.addAll(summary.items);
       }
 
-      final activityResponse = await http.get(
-        Uri.parse('https://graph.microsoft.com/v1.0/me/notifications'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Accept': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 10));
+      final activityResponse = await http
+          .get(
+            Uri.parse('https://graph.microsoft.com/v1.0/me/notifications'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
 
       int mentionCount = 0;
       if (activityResponse.statusCode == 200) {
         final activityData = json.decode(activityResponse.body);
         final List<dynamic> notifications = activityData['value'] ?? [];
         mentionCount = notifications.length;
-        
+
         for (var n in notifications) {
           final title = n['displayText'] ?? 'Teams Notification';
           DateTime? timestamp;
@@ -66,19 +123,18 @@ class TeamsPlugin implements NotibarPlugin {
             }
           } catch (_) {}
 
-          items.add(NotificationItem(
-            id: n['id'] ?? '',
-            title: title,
-            subtitle: 'Teams Activity',
-            timestamp: timestamp ?? DateTime.now(),
-            actionUrl: 'https://teams.microsoft.com/',
-            isUnread: true,
-            isFlagged: true,
-            metadata: {
-              'source': 'activity',
-              'id': n['id'],
-            },
-          ));
+          items.add(
+            NotificationItem(
+              id: n['id'] ?? '',
+              title: title,
+              subtitle: 'Teams Activity',
+              timestamp: timestamp ?? DateTime.now(),
+              actionUrl: 'https://teams.microsoft.com/',
+              isUnread: true,
+              isFlagged: true,
+              metadata: {'source': 'activity', 'id': n['id']},
+            ),
+          );
         }
       }
 
@@ -89,12 +145,18 @@ class TeamsPlugin implements NotibarPlugin {
       );
     } on SocketException {
       return NotificationSummary.withError(
-        PluginError(type: PluginErrorType.network, message: 'No internet connection'),
+        PluginError(
+          type: PluginErrorType.network,
+          message: 'No internet connection',
+        ),
       );
     } catch (e) {
       if (e.toString().contains('403')) {
         return NotificationSummary.withError(
-          PluginError(type: PluginErrorType.authentication, message: 'Insufficient permissions for Teams API'),
+          PluginError(
+            type: PluginErrorType.authentication,
+            message: 'Insufficient permissions for Teams API',
+          ),
         );
       }
       return NotificationSummary.withError(
@@ -104,9 +166,10 @@ class TeamsPlugin implements NotibarPlugin {
   }
 
   @override
-  NotificationSummary parseSummary(Map<String, dynamic> json, {
-    int? unreadCount, 
-    int? flaggedCount, 
+  NotificationSummary parseSummary(
+    Map<String, dynamic> json, {
+    int? unreadCount,
+    int? flaggedCount,
     int? mentionCount,
     int? assignedIssuesCount,
     int? assignedPRsCount,
@@ -117,7 +180,8 @@ class TeamsPlugin implements NotibarPlugin {
 
     for (var chat in chats) {
       final topic = chat['topic'] ?? 'Direct Chat';
-      final lastMessagePreview = chat['lastMessagePreview']?['body']?['content'] ?? 'No preview';
+      final lastMessagePreview =
+          chat['lastMessagePreview']?['body']?['content'] ?? 'No preview';
       DateTime? timestamp;
       try {
         if (chat['lastUpdatedDateTime'] != null) {
@@ -125,19 +189,19 @@ class TeamsPlugin implements NotibarPlugin {
         }
       } catch (_) {}
 
-      items.add(NotificationItem(
-        id: chat['id'] ?? '',
-        title: topic,
-        subtitle: lastMessagePreview,
-        timestamp: timestamp ?? DateTime.now(),
-        actionUrl: 'https://teams.microsoft.com/_#/l/chat/${chat['id']}/0?anon=true',
-        isUnread: true,
-        isFlagged: false,
-        metadata: {
-          'source': 'chat',
-          'chatId': chat['id'],
-        },
-      ));
+      items.add(
+        NotificationItem(
+          id: chat['id'] ?? '',
+          title: topic,
+          subtitle: lastMessagePreview,
+          timestamp: timestamp ?? DateTime.now(),
+          actionUrl:
+              'https://teams.microsoft.com/_#/l/chat/${chat['id']}/0?anon=true',
+          isUnread: true,
+          isFlagged: false,
+          metadata: {'source': 'chat', 'chatId': chat['id']},
+        ),
+      );
     }
 
     return NotificationSummary(

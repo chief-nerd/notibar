@@ -11,168 +11,31 @@ import '../plugins/microsoft/microsoft_plugin.dart';
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
-String serviceLabel(ServiceType type) {
-  switch (type) {
-    case ServiceType.microsoft:
-      return 'Microsoft 365';
-    case ServiceType.github:
-      return 'GitHub';
-    case ServiceType.jira:
-      return 'Jira';
-    case ServiceType.slack:
-      return 'Slack';
-    case ServiceType.teams:
-      return 'Microsoft Teams';
-    case ServiceType.frappe:
-      return 'Frappe / ERPNext';
-    case ServiceType.mattermost:
-      return 'Mattermost';
-    case ServiceType.custom:
-      return 'Custom';
-  }
-}
+/// Look up plugin-provided data via the bloc's plugin map.
+NotibarPlugin? _pluginFor(
+  Map<ServiceType, NotibarPlugin> plugins,
+  ServiceType type,
+) => plugins[type];
 
-IconData serviceIcon(ServiceType type) {
-  switch (type) {
-    case ServiceType.microsoft:
-      return Icons.window;
-    case ServiceType.github:
-      return Icons.code;
-    case ServiceType.jira:
-      return Icons.bug_report;
-    case ServiceType.slack:
-      return Icons.chat;
-    case ServiceType.teams:
-      return Icons.group;
-    case ServiceType.frappe:
-      return Icons.task_alt;
-    case ServiceType.mattermost:
-      return Icons.forum;
-    case ServiceType.custom:
-      return Icons.notifications;
-  }
-}
+String _serviceLabel(
+  Map<ServiceType, NotibarPlugin> plugins,
+  ServiceType type,
+) => _pluginFor(plugins, type)?.serviceLabel ?? type.name;
 
-String metricLabel(DisplayMetric metric) {
-  switch (metric) {
-    case DisplayMetric.unread:
-      return 'Unread';
-    case DisplayMetric.flagged:
-      return 'Flagged';
-    case DisplayMetric.mentions:
-      return 'Mentions';
-    case DisplayMetric.assignedIssues:
-      return 'Assigned Issues';
-    case DisplayMetric.assignedPRs:
-      return 'Assigned PRs';
-    case DisplayMetric.reviewRequests:
-      return 'Review Requests';
-    case DisplayMetric.plannerAssigned:
-      return 'Planner: My Tasks';
-    case DisplayMetric.plannerBucket:
-      return 'Planner: Bucket';
-    case DisplayMetric.plannerOpen:
-      return 'Planner: Open';
-    case DisplayMetric.plannerInProgress:
-      return 'Planner: In Progress';
-    case DisplayMetric.plannerCompleted:
-      return 'Planner: Completed';
-    case DisplayMetric.all:
-      return 'All';
-  }
-}
+IconData _serviceIcon(
+  Map<ServiceType, NotibarPlugin> plugins,
+  ServiceType type,
+) => _pluginFor(plugins, type)?.serviceIcon ?? Icons.notifications;
 
-IconData metricIcon(DisplayMetric metric) {
-  switch (metric) {
-    case DisplayMetric.unread:
-      return Icons.mark_email_unread_outlined;
-    case DisplayMetric.flagged:
-      return Icons.flag_outlined;
-    case DisplayMetric.mentions:
-      return Icons.alternate_email;
-    case DisplayMetric.assignedIssues:
-      return Icons.assignment_ind_outlined;
-    case DisplayMetric.assignedPRs:
-      return Icons.merge_type;
-    case DisplayMetric.reviewRequests:
-      return Icons.rate_review_outlined;
-    case DisplayMetric.plannerAssigned:
-      return Icons.person_outline;
-    case DisplayMetric.plannerBucket:
-      return Icons.view_column_outlined;
-    case DisplayMetric.plannerOpen:
-      return Icons.radio_button_unchecked;
-    case DisplayMetric.plannerInProgress:
-      return Icons.pending_outlined;
-    case DisplayMetric.plannerCompleted:
-      return Icons.check_circle_outline;
-    case DisplayMetric.all:
-      return Icons.all_inbox;
-  }
-}
+List<MetricDefinition> _supportedMetrics(
+  Map<ServiceType, NotibarPlugin> plugins,
+  ServiceType type,
+) => _pluginFor(plugins, type)?.supportedMetrics ?? [];
 
-List<DisplayMetric> supportedMetrics(ServiceType type) {
-  switch (type) {
-    case ServiceType.microsoft:
-      return [
-        DisplayMetric.unread,
-        DisplayMetric.flagged,
-        DisplayMetric.plannerAssigned,
-        DisplayMetric.plannerBucket,
-        DisplayMetric.plannerOpen,
-        DisplayMetric.plannerInProgress,
-        DisplayMetric.plannerCompleted,
-        DisplayMetric.all,
-      ];
-    case ServiceType.jira:
-      return [
-        DisplayMetric.assignedIssues,
-        DisplayMetric.flagged,
-        DisplayMetric.all,
-      ];
-    case ServiceType.github:
-      return [
-        DisplayMetric.assignedIssues,
-        DisplayMetric.assignedPRs,
-        DisplayMetric.reviewRequests,
-      ];
-    case ServiceType.slack:
-    case ServiceType.teams:
-    case ServiceType.mattermost:
-      return [DisplayMetric.unread, DisplayMetric.mentions];
-    case ServiceType.frappe:
-      return [DisplayMetric.unread, DisplayMetric.flagged];
-    case ServiceType.custom:
-      return [DisplayMetric.unread, DisplayMetric.flagged, DisplayMetric.all];
-  }
-}
-
-Map<String, String> serviceConfigFields(ServiceType type) {
-  switch (type) {
-    case ServiceType.microsoft:
-      return {
-        'clientId': 'Azure App Client ID',
-        'tenantId': 'Tenant ID (or "common")',
-      };
-    case ServiceType.teams:
-      return {
-        'clientId': 'Azure App Client ID',
-        'tenantId': 'Tenant ID (or "common")',
-      };
-    case ServiceType.github:
-      return {'owner': 'Repository Owner', 'repo': 'Repository Name'};
-    case ServiceType.jira:
-      return {'baseUrl': 'Jira Base URL', 'projectKey': 'Project Key'};
-    case ServiceType.slack:
-      return {'workspace': 'Workspace Name'};
-    case ServiceType.frappe:
-      return {'baseUrl': 'Frappe Base URL'};
-    case ServiceType.mattermost:
-      return {'baseUrl': 'Mattermost Base URL'};
-    case ServiceType.custom:
-      return {'baseUrl': 'API Base URL'};
-  }
-}
+Map<String, String> _configFields(
+  Map<ServiceType, NotibarPlugin> plugins,
+  ServiceType type,
+) => _pluginFor(plugins, type)?.configFields ?? {};
 
 // ─── Main Settings Window ─────────────────────────────────────────
 
@@ -376,6 +239,10 @@ class _OptionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final bloc = context.read<NotibarBloc>();
     final colorScheme = Theme.of(context).colorScheme;
+    final plugin = account != null
+        ? _pluginFor(bloc.plugins, account!.serviceType)
+        : null;
+    final metricDef = plugin?.metricById(option.metric);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -409,7 +276,7 @@ class _OptionCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
-                metricIcon(option.metric),
+                metricDef?.materialIcon ?? Icons.notifications,
                 color: option.enabled ? colorScheme.primary : Colors.grey,
                 size: 18,
               ),
@@ -427,7 +294,7 @@ class _OptionCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    metricLabel(option.metric),
+                    metricDef?.label ?? option.metric,
                     style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                   ),
                 ],
@@ -463,17 +330,21 @@ class _AddOptionDialog extends StatefulWidget {
 
 class _AddOptionDialogState extends State<_AddOptionDialog> {
   late String _selectedAccountId;
-  late DisplayMetric _selectedMetric;
+  late String _selectedMetricId;
   List<Map<String, String>> _buckets = [];
   String? _selectedBucketId;
   bool _loadingBuckets = false;
+
+  Map<ServiceType, NotibarPlugin> get _plugins =>
+      context.read<NotibarBloc>().plugins;
 
   @override
   void initState() {
     super.initState();
     final firstAccount = widget.accounts.first;
     _selectedAccountId = firstAccount.id;
-    _selectedMetric = supportedMetrics(firstAccount.serviceType).first;
+    final metrics = _supportedMetrics(_plugins, firstAccount.serviceType);
+    _selectedMetricId = metrics.isNotEmpty ? metrics.first.id : 'unread';
   }
 
   Future<void> _loadBuckets(Account account) async {
@@ -481,7 +352,10 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
     final planId = account.config['planId'];
     final token = account.apiKey;
     if (planId == null || planId.isEmpty || token == null || token.isEmpty) {
-      setState(() { _buckets = []; _selectedBucketId = null; });
+      setState(() {
+        _buckets = [];
+        _selectedBucketId = null;
+      });
       return;
     }
 
@@ -498,10 +372,14 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final plugins = _plugins;
     final selectedAccount = widget.accounts.firstWhere(
       (a) => a.id == _selectedAccountId,
     );
-    final availableMetrics = supportedMetrics(selectedAccount.serviceType);
+    final availableMetrics = _supportedMetrics(
+      plugins,
+      selectedAccount.serviceType,
+    );
 
     return AlertDialog(
       title: const Text('Add Notification Item'),
@@ -522,7 +400,7 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
                   value: a.id,
                   child: Row(
                     children: [
-                      Icon(serviceIcon(a.serviceType), size: 18),
+                      Icon(_serviceIcon(plugins, a.serviceType), size: 18),
                       const SizedBox(width: 8),
                       Text(a.name),
                     ],
@@ -536,17 +414,22 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
                     final newAccount = widget.accounts.firstWhere(
                       (a) => a.id == v,
                     );
-                    final newMetrics = supportedMetrics(newAccount.serviceType);
-                    if (!newMetrics.contains(_selectedMetric)) {
-                      _selectedMetric = newMetrics.first;
+                    final newMetrics = _supportedMetrics(
+                      plugins,
+                      newAccount.serviceType,
+                    );
+                    if (!newMetrics.any((m) => m.id == _selectedMetricId)) {
+                      _selectedMetricId = newMetrics.isNotEmpty
+                          ? newMetrics.first.id
+                          : 'unread';
                     }
                   });
                 }
               },
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<DisplayMetric>(
-              initialValue: _selectedMetric,
+            DropdownButtonFormField<String>(
+              initialValue: _selectedMetricId,
               decoration: const InputDecoration(
                 labelText: 'What to show',
                 border: OutlineInputBorder(),
@@ -554,12 +437,12 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
               ),
               items: availableMetrics.map((m) {
                 return DropdownMenuItem(
-                  value: m,
+                  value: m.id,
                   child: Row(
                     children: [
-                      Icon(metricIcon(m), size: 18),
+                      Icon(m.materialIcon, size: 18),
                       const SizedBox(width: 8),
-                      Text(metricLabel(m)),
+                      Text(m.label),
                     ],
                   ),
                 );
@@ -567,9 +450,9 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
               onChanged: (v) {
                 if (v != null) {
                   setState(() {
-                    _selectedMetric = v;
+                    _selectedMetricId = v;
                   });
-                  if (v == DisplayMetric.plannerBucket) {
+                  if (v == 'plannerBucket') {
                     final account = widget.accounts.firstWhere(
                       (a) => a.id == _selectedAccountId,
                     );
@@ -578,13 +461,15 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
                 }
               },
             ),
-            if (_selectedMetric == DisplayMetric.plannerBucket) ...[
+            if (_selectedMetricId == 'plannerBucket') ...[
               const SizedBox(height: 16),
               if (_loadingBuckets)
-                const Center(child: Padding(
-                  padding: EdgeInsets.all(8.0),
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ))
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
               else if (_buckets.isEmpty)
                 const Text(
                   'No buckets found. Make sure a Planner plan is selected in the account settings.',
@@ -624,11 +509,15 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
             final account = widget.accounts.firstWhere(
               (a) => a.id == _selectedAccountId,
             );
-            var label = '${account.name} — ${metricLabel(_selectedMetric)}';
+            final metricDef = availableMetrics
+                .where((m) => m.id == _selectedMetricId)
+                .firstOrNull;
+            var label =
+                '${account.name} — ${metricDef?.label ?? _selectedMetricId}';
             var config = <String, String>{};
 
             // Add bucket config for plannerBucket metric
-            if (_selectedMetric == DisplayMetric.plannerBucket &&
+            if (_selectedMetricId == 'plannerBucket' &&
                 _selectedBucketId != null) {
               final bucket = _buckets.firstWhere(
                 (b) => b['id'] == _selectedBucketId,
@@ -643,7 +532,7 @@ class _AddOptionDialogState extends State<_AddOptionDialog> {
               id: DateTime.now().millisecondsSinceEpoch.toString(),
               accountId: _selectedAccountId,
               label: label,
-              metric: _selectedMetric,
+              metric: _selectedMetricId,
               config: config,
             );
             context.read<NotibarBloc>().add(AddNotificationOption(option));
@@ -751,8 +640,9 @@ class _AccountCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final plugins = context.read<NotibarBloc>().plugins;
     final hasToken = account.apiKey != null && account.apiKey!.isNotEmpty;
-    final isConfigured = _isServiceConfigured(account);
+    final isConfigured = _isServiceConfigured(account, plugins);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 6),
@@ -769,7 +659,7 @@ class _AccountCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
-                serviceIcon(account.serviceType),
+                _serviceIcon(plugins, account.serviceType),
                 color: colorScheme.primary,
                 size: 18,
               ),
@@ -819,8 +709,11 @@ class _AccountCard extends StatelessWidget {
     );
   }
 
-  bool _isServiceConfigured(Account account) {
-    final requiredKeys = serviceConfigFields(account.serviceType).keys;
+  bool _isServiceConfigured(
+    Account account,
+    Map<ServiceType, NotibarPlugin> plugins,
+  ) {
+    final requiredKeys = _configFields(plugins, account.serviceType).keys;
     return requiredKeys.every(
       (key) => account.config[key] != null && account.config[key]!.isNotEmpty,
     );
@@ -878,8 +771,9 @@ class _AccountStatusRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final plugins = context.read<NotibarBloc>().plugins;
     final chips = <Widget>[
-      _Chip(label: serviceLabel(serviceType), color: Colors.blueGrey),
+      _Chip(label: _serviceLabel(plugins, serviceType), color: Colors.blueGrey),
     ];
 
     if (!isConfigured) {
@@ -957,7 +851,10 @@ class _LoginButton extends StatelessWidget {
       return;
     }
 
-    final label = serviceLabel(account.serviceType);
+    final label = _serviceLabel(
+      context.read<NotibarBloc>().plugins,
+      account.serviceType,
+    );
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Opening browser for $label login...')),
     );
@@ -1004,7 +901,8 @@ class _PlanPickerButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasPlan = account.config['planId'] != null &&
+    final hasPlan =
+        account.config['planId'] != null &&
         account.config['planId']!.isNotEmpty;
     final planName = account.config['planName'] ?? '';
 
@@ -1027,9 +925,9 @@ class _PlanPickerButton extends StatelessWidget {
     final token = account.apiKey;
     if (token == null || token.isEmpty) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Loading plans...')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Loading plans...')));
 
     final plans = await MicrosoftPlugin.fetchAvailablePlans(token);
 
@@ -1040,7 +938,9 @@ class _PlanPickerButton extends StatelessWidget {
     if (plans.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('No Planner plans found. Make sure you have access to Microsoft 365 groups with plans.'),
+          content: Text(
+            'No Planner plans found. Make sure you have access to Microsoft 365 groups with plans.',
+          ),
           backgroundColor: Colors.orange,
         ),
       );
@@ -1079,7 +979,8 @@ class _PlanPickerButton extends StatelessWidget {
           ),
           if (account.config['planId'] != null)
             TextButton(
-              onPressed: () => Navigator.pop(ctx, {'id': '', 'title': '', 'groupName': ''}),
+              onPressed: () =>
+                  Navigator.pop(ctx, {'id': '', 'title': '', 'groupName': ''}),
               child: const Text('Clear'),
             ),
         ],
@@ -1118,10 +1019,13 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
   ServiceType _selectedType = ServiceType.microsoft;
   final Map<String, TextEditingController> _configControllers = {};
 
+  Map<ServiceType, NotibarPlugin> get _plugins =>
+      context.read<NotibarBloc>().plugins;
+
   @override
   void initState() {
     super.initState();
-    _nameController.text = serviceLabel(_selectedType);
+    _nameController.text = _serviceLabel(_plugins, _selectedType);
     _rebuildConfigControllers();
   }
 
@@ -1130,7 +1034,7 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
       c.dispose();
     }
     _configControllers.clear();
-    for (final key in serviceConfigFields(_selectedType).keys) {
+    for (final key in _configFields(_plugins, _selectedType).keys) {
       _configControllers[key] = TextEditingController();
     }
   }
@@ -1147,7 +1051,8 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final fields = serviceConfigFields(_selectedType);
+    final plugins = _plugins;
+    final fields = _configFields(plugins, _selectedType);
 
     return AlertDialog(
       title: const Text('Add Account'),
@@ -1169,9 +1074,9 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
                     value: type,
                     child: Row(
                       children: [
-                        Icon(serviceIcon(type), size: 18),
+                        Icon(_serviceIcon(plugins, type), size: 18),
                         const SizedBox(width: 8),
-                        Text(serviceLabel(type)),
+                        Text(_serviceLabel(plugins, type)),
                       ],
                     ),
                   );
@@ -1180,7 +1085,7 @@ class _AddAccountDialogState extends State<_AddAccountDialog> {
                   if (value != null) {
                     setState(() {
                       _selectedType = value;
-                      _nameController.text = serviceLabel(value);
+                      _nameController.text = _serviceLabel(plugins, value);
                       _rebuildConfigControllers();
                     });
                   }
@@ -1314,7 +1219,10 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
       text: widget.account.apiKey ?? '',
     );
     _configControllers = {};
-    final fields = serviceConfigFields(widget.account.serviceType);
+    final fields = _configFields(
+      context.read<NotibarBloc>().plugins,
+      widget.account.serviceType,
+    );
     for (final key in fields.keys) {
       _configControllers[key] = TextEditingController(
         text: widget.account.config[key] ?? '',
@@ -1335,12 +1243,13 @@ class _EditAccountDialogState extends State<_EditAccountDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final fields = serviceConfigFields(widget.account.serviceType);
+    final plugins = context.read<NotibarBloc>().plugins;
+    final fields = _configFields(plugins, widget.account.serviceType);
 
     return AlertDialog(
       title: Row(
         children: [
-          Icon(serviceIcon(widget.account.serviceType), size: 22),
+          Icon(_serviceIcon(plugins, widget.account.serviceType), size: 22),
           const SizedBox(width: 8),
           Text('Edit ${widget.account.name}'),
         ],

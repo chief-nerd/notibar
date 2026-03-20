@@ -32,7 +32,7 @@ void main() {
       id: 'opt_1',
       accountId: '1',
       label: 'Unread',
-      metric: DisplayMetric.unread,
+      metric: 'unread',
     );
 
     setUp(() {
@@ -57,9 +57,7 @@ void main() {
       notibarBloc = NotibarBloc(
         accountRepository: mockRepo,
         optionRepository: mockOptionRepo,
-        plugins: {
-          ServiceType.microsoft: mockPlugin,
-        },
+        plugins: {ServiceType.microsoft: mockPlugin},
       );
     });
 

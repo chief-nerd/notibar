@@ -1,17 +1,64 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../models/account.dart';
 import '../../models/notification_item.dart';
+import '../../services/multi_status_item_channel.dart';
 import '../plugin_interface.dart';
 
-class FrappePlugin implements NotibarPlugin {
+class FrappePlugin extends NotibarPlugin {
   @override
   ServiceType get serviceType => ServiceType.frappe;
 
   @override
+  String get serviceLabel => 'Frappe / ERPNext';
+
+  @override
+  IconData get serviceIcon => Icons.task_alt;
+
+  @override
+  Map<String, String> get configFields => {'baseUrl': 'Frappe Base URL'};
+
+  @override
+  List<MetricDefinition> get supportedMetrics => [
+    MetricDefinition(
+      id: 'unread',
+      label: 'Unread',
+      sfSymbol: 'envelope.badge',
+      materialIcon: Icons.mark_email_unread_outlined,
+      count: (s, _) => s.unreadCount,
+      filter: (s, _) => s.items.where((i) => i.isUnread).toList(),
+    ),
+    MetricDefinition(
+      id: 'flagged',
+      label: 'Flagged',
+      sfSymbol: 'flag',
+      materialIcon: Icons.flag_outlined,
+      count: (s, _) => s.flaggedCount,
+      filter: (s, _) => s.items.where((i) => i.isFlagged).toList(),
+    ),
+  ];
+
+  @override
+  StatusMenuItem formatMenuEntry(NotificationItem item) {
+    var title = item.title;
+    if (title.length > 60) title = '${title.substring(0, 57)}...';
+    final priority = item.metadata['priority'] as String? ?? '';
+    final flagIndicator = item.isFlagged ? '\uD83D\uDEA9 ' : '';
+    return StatusMenuItem(
+      label: '$flagIndicator$title',
+      subtitle: [
+        item.subtitle ?? '',
+        if (priority.isNotEmpty) '($priority)',
+      ].join(' ').trim(),
+      hasCallback: item.actionUrl.isNotEmpty,
+    );
+  }
+
+  @override
   Future<NotificationSummary> fetchNotifications(Account account) async {
-    final token = account.apiKey; 
+    final token = account.apiKey;
     if (token == null || token.isEmpty || !token.contains(':')) {
       return NotificationSummary.withError(
         PluginError(
@@ -21,34 +68,52 @@ class FrappePlugin implements NotibarPlugin {
       );
     }
 
-    final baseUrl = account.config['baseUrl']?.trim().replaceAll(RegExp(r'/$'), '');
+    final baseUrl = account.config['baseUrl']?.trim().replaceAll(
+      RegExp(r'/$'),
+      '',
+    );
     if (baseUrl == null || baseUrl.isEmpty) {
       return NotificationSummary.withError(
-        PluginError(type: PluginErrorType.unknown, message: 'Frappe Base URL is required'),
+        PluginError(
+          type: PluginErrorType.unknown,
+          message: 'Frappe Base URL is required',
+        ),
       );
     }
 
     try {
       final authHeader = 'token $token';
-      final filters = json.encode([['ToDo', 'status', '=', 'Open']]);
+      final filters = json.encode([
+        ['ToDo', 'status', '=', 'Open'],
+      ]);
 
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/resource/ToDo?filters=$filters&fields=["name","description","owner","modified","priority","reference_type","reference_name"]&order_by=modified desc&limit_page_length=20'),
-        headers: {
-          'Authorization': authHeader,
-          'Accept': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(
+            Uri.parse(
+              '$baseUrl/api/resource/ToDo?filters=$filters&fields=["name","description","owner","modified","priority","reference_type","reference_name"]&order_by=modified desc&limit_page_length=20',
+            ),
+            headers: {
+              'Authorization': authHeader,
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         return NotificationSummary.withError(
-          PluginError(type: PluginErrorType.authentication, message: 'Frappe authentication failed'),
+          PluginError(
+            type: PluginErrorType.authentication,
+            message: 'Frappe authentication failed',
+          ),
         );
       }
 
       if (response.statusCode != 200) {
         return NotificationSummary.withError(
-          PluginError(type: PluginErrorType.network, message: 'Failed to fetch Frappe ToDos: ${response.statusCode}'),
+          PluginError(
+            type: PluginErrorType.network,
+            message: 'Failed to fetch Frappe ToDos: ${response.statusCode}',
+          ),
         );
       }
 
@@ -56,7 +121,10 @@ class FrappePlugin implements NotibarPlugin {
       return parseSummary(data, baseUrl: baseUrl);
     } on SocketException {
       return NotificationSummary.withError(
-        PluginError(type: PluginErrorType.network, message: 'No internet connection'),
+        PluginError(
+          type: PluginErrorType.network,
+          message: 'No internet connection',
+        ),
       );
     } catch (e) {
       return NotificationSummary.withError(
@@ -66,9 +134,10 @@ class FrappePlugin implements NotibarPlugin {
   }
 
   @override
-  NotificationSummary parseSummary(Map<String, dynamic> json, {
-    int? unreadCount, 
-    int? flaggedCount, 
+  NotificationSummary parseSummary(
+    Map<String, dynamic> json, {
+    int? unreadCount,
+    int? flaggedCount,
     int? mentionCount,
     int? assignedIssuesCount,
     int? assignedPRsCount,
@@ -83,10 +152,12 @@ class FrappePlugin implements NotibarPlugin {
       final priority = todo['priority'] ?? 'Medium';
       final referenceType = todo['reference_type'];
       final referenceName = todo['reference_name'];
-      
-      final cleanDescription = description.replaceAll(RegExp(r'<[^>]*>'), '').trim();
-      final displayDescription = cleanDescription.length > 60 
-          ? '${cleanDescription.substring(0, 57)}...' 
+
+      final cleanDescription = description
+          .replaceAll(RegExp(r'<[^>]*>'), '')
+          .trim();
+      final displayDescription = cleanDescription.length > 60
+          ? '${cleanDescription.substring(0, 57)}...'
           : cleanDescription;
 
       DateTime? timestamp;
@@ -101,8 +172,8 @@ class FrappePlugin implements NotibarPlugin {
       return NotificationItem(
         id: name,
         title: displayDescription.isNotEmpty ? displayDescription : name,
-        subtitle: referenceType != null && referenceName != null 
-            ? '$referenceType: $referenceName' 
+        subtitle: referenceType != null && referenceName != null
+            ? '$referenceType: $referenceName'
             : 'ToDo: $name',
         timestamp: timestamp ?? DateTime.now(),
         actionUrl: actionUrl,

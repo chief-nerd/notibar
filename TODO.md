@@ -9,6 +9,8 @@
 
 ## Completed
 
+- [x] **Fix Outlook showing 0 after sleep/wake**: `_fetchCount` was swallowing network exceptions (`SocketException`, `ClientException`, `TimeoutException`) and returning 0 instead of propagating them. The tray then treated these as real zero counts and hid the Outlook items. Fixed by rethrowing network exceptions from `_fetchCount` so `_doFetch` catches them as `PluginErrorType.network`. Also added `ClientException`/`TimeoutException` catch blocks in `_doFetch`, and made the bloc preserve the previous summary on network errors instead of replacing it with zeros.
+- [x] **Plugin architecture refactoring**: Moved all plugin-specific presentation logic out of TrayManager and settings_window into the plugins themselves. Removed global `DisplayMetric` enum — metrics are now string-based IDs owned by each plugin's `MetricDefinition` list. Plugins are fully self-describing: they declare `serviceLabel`, `serviceIcon`, `configFields`, `supportedMetrics` (with SF Symbol, Material icon, count/filter functions), and `formatMenuEntry`. The tray and settings UI have zero plugin-specific knowledge. All plugins changed from `implements` to `extends NotibarPlugin`. Updated docs/custom-plugin.md and .instructions.md. All 22 tests pass, 0 analysis issues.
 - [x] **Rename Outlook → Microsoft 365**: `ServiceType.outlook` → `ServiceType.microsoft`, all UI labels and plugin classes updated. Backward-compatible deserialization preserves existing accounts.
 - [x] **Add MS Planner Tasks support** under the Microsoft plugin: fetches tasks for a selected plan, with display metrics for My Tasks, by Bucket, Open, In Progress, and Completed
 - [x] `NotificationOption.config` map added to support per-option settings (e.g., bucket selection for Planner)

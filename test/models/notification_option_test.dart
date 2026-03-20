@@ -14,14 +14,14 @@ void main() {
         id: '1',
         accountId: 'a1',
         label: 'L1',
-        metric: DisplayMetric.flagged,
+        metric: 'flagged',
         enabled: false,
         sortOrder: 5,
       );
-      
+
       final json = original.toJson();
       final decoded = NotificationOption.fromJson(json);
-      
+
       expect(decoded, original);
       expect(json['metric'], 'flagged');
       expect(json['enabled'], false);

@@ -2,6 +2,8 @@
 
 Build your own Notibar plugin to display notification counts from any service.
 
+Plugins are **self-describing**: they declare their own UI metadata (labels, icons, supported metrics, menu formatting). The tray and settings UI have zero plugin-specific knowledge — everything is driven by the plugin's `MetricDefinition` list and helper methods.
+
 ## Quick Start
 
 ### 1. Create the Plugin Class
@@ -9,13 +11,47 @@ Build your own Notibar plugin to display notification counts from any service.
 Create a new file at `lib/plugins/my_service/my_service_plugin.dart`:
 
 ```dart
+import 'package:flutter/material.dart';
 import '../../models/account.dart';
 import '../../models/notification_item.dart';
+import '../../services/multi_status_item_channel.dart';
 import '../plugin_interface.dart';
 
-class MyServicePlugin implements NotibarPlugin {
+class MyServicePlugin extends NotibarPlugin {
   @override
   ServiceType get serviceType => ServiceType.custom;
+
+  @override
+  String get serviceLabel => 'My Service';
+
+  @override
+  IconData get serviceIcon => Icons.notifications;
+
+  @override
+  Map<String, String> get configFields => {
+    'baseUrl': 'Base URL',
+  };
+
+  @override
+  List<MetricDefinition> get supportedMetrics => [
+    MetricDefinition(
+      id: 'unread',
+      label: 'Unread',
+      sfSymbol: 'envelope.badge',
+      materialIcon: Icons.mark_email_unread_outlined,
+      count: (s, _) => s.unreadCount,
+      filter: (s, _) => s.items.where((i) => i.isUnread).toList(),
+    ),
+  ];
+
+  @override
+  StatusMenuItem formatMenuEntry(NotificationItem item) {
+    return StatusMenuItem(
+      label: item.title,
+      subtitle: item.subtitle,
+      hasCallback: item.actionUrl.isNotEmpty,
+    );
+  }
 
   @override
   Future<NotificationSummary> fetchNotifications(Account account) async {
@@ -73,14 +109,16 @@ class MyServicePlugin implements NotibarPlugin {
 
 ### 2. Register the Plugin
 
-In `lib/ui/tray_manager.dart`, add your plugin to the plugin map:
+In `lib/bloc/notibar_bloc.dart`, add your plugin to the plugins map:
 
 ```dart
-final _plugins = <ServiceType, NotibarPlugin>{
-  ServiceType.outlook: OutlookPlugin(),
+plugins ?? {
+  ServiceType.microsoft: MicrosoftPlugin(),
   ServiceType.custom: MyServicePlugin(),  // Add this
-};
+},
 ```
+
+No UI wiring is needed — the tray and settings window automatically discover your plugin's label, icon, metrics, and menu formatting from its overrides.
 
 ### 3. Add a Service Type (Optional)
 
@@ -178,13 +216,15 @@ void main() {
 
 ## Display Metrics
 
-Your plugin can populate any combination of these counts in `NotificationSummary`:
+Each plugin declares its own metrics via the `supportedMetrics` getter, returning a list of `MetricDefinition` objects. Each metric carries all the UI metadata the tray and settings window need:
 
-| Field                 | DisplayMetric    | Tray icon |
-| --------------------- | ---------------- | --------- |
-| `unreadCount`         | `unread`         | 📧         |
-| `flaggedCount`        | `flagged`        | 🚩         |
-| `mentionCount`        | `mentions`       | 💬         |
-| `assignedIssuesCount` | `assignedIssues` | 📋         |
-| `assignedPRsCount`    | `assignedPRs`    | 🔀         |
-| `reviewRequestsCount` | `reviewRequests` | 👀         |
+| Property       | Type                  | Purpose                                               |
+| -------------- | --------------------- | ----------------------------------------------------- |
+| `id`           | `String`              | Stored in `NotificationOption.metric` (e.g. `'unread'`) |
+| `label`        | `String`              | Human-readable name shown in settings dropdown        |
+| `sfSymbol`     | `String`              | macOS SF Symbol for the tray status item icon         |
+| `materialIcon` | `IconData`            | Material icon for the Flutter settings UI             |
+| `count`        | `(summary, config) → int` | Extracts the count for this metric from a summary |
+| `filter`       | `(summary, config) → List<NotificationItem>` | Filters items for the dropdown menu |
+
+Metrics are entirely plugin-defined — there is no global enum. A plugin can support any combination of standard summary fields (`unreadCount`, `flaggedCount`, `mentionCount`, etc.) or derive custom metrics via the `count` and `filter` functions.

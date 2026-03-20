@@ -1,14 +1,64 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../models/account.dart';
 import '../../models/notification_item.dart';
+import '../../services/multi_status_item_channel.dart';
 import '../plugin_interface.dart';
 
-class YourServicePlugin implements NotibarPlugin {
+class YourServicePlugin extends NotibarPlugin {
   /// Replace custom with your service type
   @override
   ServiceType get serviceType => ServiceType.custom;
+
+  @override
+  String get serviceLabel => 'Custom';
+
+  @override
+  IconData get serviceIcon => Icons.notifications;
+
+  @override
+  Map<String, String> get configFields => {'baseUrl': 'API Base URL'};
+
+  @override
+  List<MetricDefinition> get supportedMetrics => [
+    MetricDefinition(
+      id: 'unread',
+      label: 'Unread',
+      sfSymbol: 'envelope.badge',
+      materialIcon: Icons.mark_email_unread_outlined,
+      count: (s, _) => s.unreadCount,
+      filter: (s, _) => s.items.where((i) => i.isUnread).toList(),
+    ),
+    MetricDefinition(
+      id: 'flagged',
+      label: 'Flagged',
+      sfSymbol: 'flag',
+      materialIcon: Icons.flag_outlined,
+      count: (s, _) => s.flaggedCount,
+      filter: (s, _) => s.items.where((i) => i.isFlagged).toList(),
+    ),
+    MetricDefinition(
+      id: 'all',
+      label: 'All',
+      sfSymbol: 'tray.full',
+      materialIcon: Icons.all_inbox,
+      count: (s, _) => s.items.length,
+      filter: (s, _) => s.items,
+    ),
+  ];
+
+  @override
+  StatusMenuItem formatMenuEntry(NotificationItem item) {
+    var title = item.title;
+    if (title.length > 60) title = '${title.substring(0, 57)}...';
+    return StatusMenuItem(
+      label: title,
+      subtitle: item.subtitle,
+      hasCallback: item.actionUrl.isNotEmpty,
+    );
+  }
 
   @override
   Future<NotificationSummary> fetchNotifications(Account account) async {

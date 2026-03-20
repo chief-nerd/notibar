@@ -1,17 +1,217 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import '../../models/account.dart';
 import '../../models/notification_item.dart';
+import '../../services/multi_status_item_channel.dart';
 import '../../services/outlook_auth_service.dart';
 import '../plugin_interface.dart';
 
 const _tag = '[Microsoft]';
 
-class MicrosoftPlugin implements NotibarPlugin {
+class MicrosoftPlugin extends NotibarPlugin {
   @override
   ServiceType get serviceType => ServiceType.microsoft;
+
+  @override
+  String get serviceLabel => 'Microsoft 365';
+
+  @override
+  IconData get serviceIcon => Icons.window;
+
+  @override
+  Map<String, String> get configFields => {
+    'clientId': 'Azure App Client ID',
+    'tenantId': 'Tenant ID (or "common")',
+  };
+
+  @override
+  List<MetricDefinition> get supportedMetrics => [
+    MetricDefinition(
+      id: 'unread',
+      label: 'Unread',
+      sfSymbol: 'envelope.badge',
+      materialIcon: Icons.mark_email_unread_outlined,
+      count: (s, _) => s.unreadCount,
+      filter: (s, _) => s.items.where((i) => i.isUnread).toList(),
+    ),
+    MetricDefinition(
+      id: 'flagged',
+      label: 'Flagged',
+      sfSymbol: 'flag',
+      materialIcon: Icons.flag_outlined,
+      count: (s, _) => s.flaggedCount,
+      filter: (s, _) => s.items.where((i) => i.isFlagged).toList(),
+    ),
+    MetricDefinition(
+      id: 'plannerAssigned',
+      label: 'Planner: My Tasks',
+      sfSymbol: 'person.badge.plus',
+      materialIcon: Icons.person_outline,
+      count: (s, _) => s.items
+          .where(
+            (i) =>
+                i.metadata['source'] == 'planner' &&
+                i.metadata['status'] != 'completed',
+          )
+          .length,
+      filter: (s, _) => s.items
+          .where(
+            (i) =>
+                i.metadata['source'] == 'planner' &&
+                i.metadata['status'] != 'completed',
+          )
+          .toList(),
+    ),
+    MetricDefinition(
+      id: 'plannerBucket',
+      label: 'Planner: Bucket',
+      sfSymbol: 'tray.2',
+      materialIcon: Icons.view_column_outlined,
+      count: (s, config) {
+        final bucketId = config['bucketId'] ?? '';
+        return s.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] != 'completed' &&
+                  (bucketId.isEmpty || i.metadata['bucketId'] == bucketId),
+            )
+            .length;
+      },
+      filter: (s, config) {
+        final bucketId = config['bucketId'] ?? '';
+        return s.items
+            .where(
+              (i) =>
+                  i.metadata['source'] == 'planner' &&
+                  i.metadata['status'] != 'completed' &&
+                  (bucketId.isEmpty || i.metadata['bucketId'] == bucketId),
+            )
+            .toList();
+      },
+    ),
+    MetricDefinition(
+      id: 'plannerOpen',
+      label: 'Planner: Open',
+      sfSymbol: 'paperplane.circle',
+      materialIcon: Icons.radio_button_unchecked,
+      count: (s, _) => s.items
+          .where(
+            (i) =>
+                i.metadata['source'] == 'planner' &&
+                i.metadata['status'] == 'open',
+          )
+          .length,
+      filter: (s, _) => s.items
+          .where(
+            (i) =>
+                i.metadata['source'] == 'planner' &&
+                i.metadata['status'] == 'open',
+          )
+          .toList(),
+    ),
+    MetricDefinition(
+      id: 'plannerInProgress',
+      label: 'Planner: In Progress',
+      sfSymbol: 'arrow.trianglehead.2.clockwise.rotate.90.circle',
+      materialIcon: Icons.pending_outlined,
+      count: (s, _) => s.items
+          .where(
+            (i) =>
+                i.metadata['source'] == 'planner' &&
+                i.metadata['status'] == 'inProgress',
+          )
+          .length,
+      filter: (s, _) => s.items
+          .where(
+            (i) =>
+                i.metadata['source'] == 'planner' &&
+                i.metadata['status'] == 'inProgress',
+          )
+          .toList(),
+    ),
+    MetricDefinition(
+      id: 'plannerCompleted',
+      label: 'Planner: Completed',
+      sfSymbol: 'checkmark.circle',
+      materialIcon: Icons.check_circle_outline,
+      count: (s, _) => s.items
+          .where(
+            (i) =>
+                i.metadata['source'] == 'planner' &&
+                i.metadata['status'] == 'completed',
+          )
+          .length,
+      filter: (s, _) => s.items
+          .where(
+            (i) =>
+                i.metadata['source'] == 'planner' &&
+                i.metadata['status'] == 'completed',
+          )
+          .toList(),
+    ),
+    MetricDefinition(
+      id: 'all',
+      label: 'All',
+      sfSymbol: 'tray.full',
+      materialIcon: Icons.all_inbox,
+      count: (s, _) => s.items.length,
+      filter: (s, _) => s.items,
+    ),
+  ];
+
+  @override
+  StatusMenuItem formatMenuEntry(NotificationItem item) {
+    final source = item.metadata['source'] as String?;
+
+    // Planner items: line 1 = status icon + task title, line 2 = bucket
+    if (source == 'planner') {
+      var title = item.title;
+      if (title.length > 60) title = '${title.substring(0, 57)}...';
+      final status = item.metadata['status'] as String? ?? '';
+      final bucket = item.metadata['bucketName'] as String? ?? '';
+      final statusIcon = switch (status) {
+        'completed' => '\u2705',
+        'inProgress' => '\uD83D\uDD04',
+        _ => '\u2B1C',
+      };
+      return StatusMenuItem(
+        label: '$statusIcon $title',
+        subtitle: bucket.isNotEmpty ? bucket : null,
+        hasCallback: item.actionUrl.isNotEmpty,
+      );
+    }
+
+    // Outlook mail: indicators + sender — subject, body preview
+    final indicators = [
+      if (item.isUnread) '\u25CF',
+      if (item.isFlagged) '\uD83D\uDEA9',
+    ].join(' ');
+    final sender = item.subtitle ?? '';
+    var subject = item.title;
+    if (subject.length > 50) subject = '${subject.substring(0, 47)}...';
+    final line1 = [
+      if (indicators.isNotEmpty) indicators,
+      if (sender.isNotEmpty) '$sender \u2014',
+      subject,
+    ].join(' ');
+
+    String? line2;
+    if (item.body != null && item.body!.isNotEmpty) {
+      var preview = item.body!.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (preview.length > 80) preview = '${preview.substring(0, 77)}...';
+      line2 = preview;
+    }
+
+    return StatusMenuItem(
+      label: line1,
+      subtitle: line2,
+      hasCallback: item.actionUrl.isNotEmpty,
+    );
+  }
 
   @override
   Future<NotificationSummary> fetchNotifications(Account account) async {
@@ -193,6 +393,22 @@ class MicrosoftPlugin implements NotibarPlugin {
           message: 'No internet connection',
         ),
       );
+    } on http.ClientException catch (e) {
+      debugPrint('$_tag ClientException: $e');
+      return NotificationSummary.withError(
+        PluginError(
+          type: PluginErrorType.network,
+          message: 'No internet connection',
+        ),
+      );
+    } on TimeoutException catch (e) {
+      debugPrint('$_tag TimeoutException: $e');
+      return NotificationSummary.withError(
+        PluginError(
+          type: PluginErrorType.network,
+          message: 'Request timed out',
+        ),
+      );
     } catch (e, stack) {
       debugPrint('$_tag unexpected error: $e\n$stack');
       return NotificationSummary.withError(
@@ -258,7 +474,7 @@ class MicrosoftPlugin implements NotibarPlugin {
       final bucketId = t['bucketId'] as String? ?? '';
       final bucketName = bucketMap[bucketId] ?? '';
       final percentComplete = t['percentComplete'] as int? ?? 0;
-      
+
       String status;
       if (percentComplete == 100) {
         status = 'completed';
@@ -295,7 +511,10 @@ class MicrosoftPlugin implements NotibarPlugin {
         timestamp: dueDate ?? createdDate ?? DateTime.now(),
         actionUrl: 'https://tasks.office.com',
         isUnread: status != 'completed',
-        isFlagged: dueDate != null && dueDate.isBefore(DateTime.now()) && status != 'completed',
+        isFlagged:
+            dueDate != null &&
+            dueDate.isBefore(DateTime.now()) &&
+            status != 'completed',
         metadata: {
           'source': 'planner',
           'taskId': taskId,
@@ -476,6 +695,12 @@ class MicrosoftPlugin implements NotibarPlugin {
 
       final count = int.tryParse(response.body) ?? 0;
       return count;
+    } on SocketException {
+      rethrow;
+    } on http.ClientException {
+      rethrow;
+    } on TimeoutException {
+      rethrow;
     } catch (e) {
       debugPrint('$_tag _fetchCount($filter) exception: $e');
       return 0;
@@ -506,9 +731,7 @@ class MicrosoftPlugin implements NotibarPlugin {
             .timeout(const Duration(seconds: 15));
 
         if (response.statusCode != 200) {
-          debugPrint(
-            '$_tag _fetchPlannerTasks failed: ${response.statusCode}',
-          );
+          debugPrint('$_tag _fetchPlannerTasks failed: ${response.statusCode}');
           return allTasks;
         }
 
@@ -549,9 +772,7 @@ class MicrosoftPlugin implements NotibarPlugin {
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode != 200) {
-        debugPrint(
-          '$_tag _fetchPlannerBuckets failed: ${response.statusCode}',
-        );
+        debugPrint('$_tag _fetchPlannerBuckets failed: ${response.statusCode}');
         return {};
       }
 
@@ -596,7 +817,9 @@ class MicrosoftPlugin implements NotibarPlugin {
           .timeout(const Duration(seconds: 15));
 
       if (groupsResponse.statusCode != 200) {
-        debugPrint('$_tag fetchAvailablePlans groups failed: ${groupsResponse.statusCode}');
+        debugPrint(
+          '$_tag fetchAvailablePlans groups failed: ${groupsResponse.statusCode}',
+        );
         return [];
       }
 
@@ -671,10 +894,12 @@ class MicrosoftPlugin implements NotibarPlugin {
       final data = json.decode(response.body);
       final buckets = data['value'] as List<dynamic>? ?? [];
       return buckets
-          .map((b) => {
-                'id': b['id'] as String? ?? '',
-                'name': b['name'] as String? ?? '',
-              })
+          .map(
+            (b) => {
+              'id': b['id'] as String? ?? '',
+              'name': b['name'] as String? ?? '',
+            },
+          )
           .toList();
     } catch (e) {
       debugPrint('$_tag fetchBucketsForPlan exception: $e');

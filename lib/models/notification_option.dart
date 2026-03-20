@@ -1,28 +1,15 @@
 import 'package:equatable/equatable.dart';
 
-/// What metric/view to show in the tray for a given account.
-enum DisplayMetric { 
-  unread, 
-  flagged, 
-  mentions, 
-  assignedIssues, 
-  assignedPRs, 
-  reviewRequests,
-  plannerAssigned,
-  plannerBucket,
-  plannerOpen,
-  plannerInProgress,
-  plannerCompleted,
-  all 
-}
-
 /// A single tray menu entry: ties an account to a specific display metric.
 /// Multiple options can reference the same account (e.g., "Unread" and "Flagged").
 class NotificationOption extends Equatable {
   final String id;
   final String accountId;
   final String label;
-  final DisplayMetric metric;
+
+  /// Metric ID as defined by the plugin's MetricDefinition.id
+  /// (e.g. 'unread', 'flagged', 'assignedPRs').
+  final String metric;
   final bool enabled;
   final int sortOrder;
   final Map<String, String> config;
@@ -31,7 +18,7 @@ class NotificationOption extends Equatable {
     required this.id,
     required this.accountId,
     required this.label,
-    this.metric = DisplayMetric.unread,
+    this.metric = 'unread',
     this.enabled = true,
     this.sortOrder = 0,
     this.config = const {},
@@ -41,7 +28,7 @@ class NotificationOption extends Equatable {
     String? id,
     String? accountId,
     String? label,
-    DisplayMetric? metric,
+    String? metric,
     bool? enabled,
     int? sortOrder,
     Map<String, String>? config,
@@ -62,15 +49,14 @@ class NotificationOption extends Equatable {
       id: json['id'] as String,
       accountId: json['accountId'] as String,
       label: json['label'] as String,
-      metric: DisplayMetric.values.firstWhere(
-        (e) => e.name == json['metric'],
-        orElse: () => DisplayMetric.unread,
-      ),
+      metric: json['metric'] as String? ?? 'unread',
       enabled: json['enabled'] as bool? ?? true,
       sortOrder: (json['sortOrder'] as num?)?.toInt() ?? 0,
-      config: (json['config'] as Map<String, dynamic>?)?.map(
-        (k, e) => MapEntry(k, e as String),
-      ) ?? const {},
+      config:
+          (json['config'] as Map<String, dynamic>?)?.map(
+            (k, e) => MapEntry(k, e as String),
+          ) ??
+          const {},
     );
   }
 
@@ -78,12 +64,20 @@ class NotificationOption extends Equatable {
     'id': id,
     'accountId': accountId,
     'label': label,
-    'metric': metric.name,
+    'metric': metric,
     'enabled': enabled,
     'sortOrder': sortOrder,
     'config': config,
   };
 
   @override
-  List<Object?> get props => [id, accountId, label, metric, enabled, sortOrder, config];
+  List<Object?> get props => [
+    id,
+    accountId,
+    label,
+    metric,
+    enabled,
+    sortOrder,
+    config,
+  ];
 }

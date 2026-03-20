@@ -47,6 +47,7 @@ void main() async {
 
   final trayManager = TrayManager(
     bloc,
+    plugins: bloc.plugins,
     onSettingsPressed: () => _showSettings(),
   );
   await trayManager.init();

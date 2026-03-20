@@ -1,8 +1,68 @@
+import 'package:flutter/widgets.dart';
 import '../models/account.dart';
 import '../models/notification_item.dart';
+import '../services/multi_status_item_channel.dart';
+
+// ── Metric definition ─────────────────────────────────────────────
+
+/// Describes a single display metric that a plugin supports.
+/// Carries all UI metadata so the tray and settings UI need no
+/// plugin-specific knowledge.
+class MetricDefinition {
+  /// Unique ID stored in NotificationOption.metric (e.g. 'unread').
+  final String id;
+
+  /// Human-readable label (e.g. 'Unread', 'Review Requests').
+  final String label;
+
+  /// macOS SF Symbol name for the tray status item.
+  final String sfSymbol;
+
+  /// Material icon for the Flutter settings UI.
+  final IconData materialIcon;
+
+  /// Extracts the count for this metric from a summary.
+  final int Function(NotificationSummary summary, Map<String, String> config)
+  count;
+
+  /// Filters items from a summary for this metric's dropdown.
+  final List<NotificationItem> Function(
+    NotificationSummary summary,
+    Map<String, String> config,
+  )
+  filter;
+
+  const MetricDefinition({
+    required this.id,
+    required this.label,
+    required this.sfSymbol,
+    required this.materialIcon,
+    required this.count,
+    required this.filter,
+  });
+}
+
+// ── Plugin interface ──────────────────────────────────────────────
 
 abstract class NotibarPlugin {
   ServiceType get serviceType;
+
+  /// Human-readable name (e.g. 'Microsoft 365', 'GitHub').
+  String get serviceLabel;
+
+  /// Material icon for the settings UI.
+  IconData get serviceIcon;
+
+  /// Config fields needed for account setup.
+  /// Keys are config map keys, values are human-readable labels.
+  Map<String, String> get configFields;
+
+  /// The display metrics this plugin supports, with all UI metadata.
+  List<MetricDefinition> get supportedMetrics;
+
+  /// Format a notification item as a native menu entry.
+  StatusMenuItem formatMenuEntry(NotificationItem item);
+
   Future<NotificationSummary> fetchNotifications(Account account);
 
   /// Decodes raw JSON from the service into a NotificationSummary.
@@ -16,7 +76,13 @@ abstract class NotibarPlugin {
     int? assignedPRsCount,
     int? reviewRequestsCount,
   });
+
+  /// Look up a metric definition by its ID. Returns null if not found.
+  MetricDefinition? metricById(String id) =>
+      supportedMetrics.where((m) => m.id == id).firstOrNull;
 }
+
+// ── Summary & errors ──────────────────────────────────────────────
 
 class NotificationSummary {
   final int unreadCount;

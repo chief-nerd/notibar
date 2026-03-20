@@ -16,7 +16,7 @@ import 'notibar_event.dart';
 import 'notibar_state.dart';
 
 class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
-  final Map<ServiceType, NotibarPlugin> _plugins;
+  final Map<ServiceType, NotibarPlugin> plugins;
   final AccountRepository _accountRepository;
   final NotificationOptionRepository _optionRepository;
   final Map<String, Timer> _pollingTimers = {};
@@ -27,7 +27,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
     Map<ServiceType, NotibarPlugin>? plugins,
   }) : _accountRepository = accountRepository,
        _optionRepository = optionRepository,
-       _plugins =
+       plugins =
            plugins ??
            {
              ServiceType.microsoft: MicrosoftPlugin(),
@@ -40,7 +40,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
            },
        super(NotibarInitial()) {
     debugPrint(
-      '[Bloc] init with ${_plugins.length} plugins: ${_plugins.keys.join(', ')}',
+      '[Bloc] init with ${this.plugins.length} plugins: ${this.plugins.keys.join(', ')}',
     );
     on<LoadAccounts>(_onLoadAccounts);
     on<RefreshAll>(_onRefreshAll);
@@ -81,7 +81,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
       for (var i = 0; i < updatedAccounts.length; i++) {
         final account = updatedAccounts[i];
         if (!activeAccountIds.contains(account.id)) continue;
-        final plugin = _plugins[account.serviceType];
+        final plugin = plugins[account.serviceType];
         if (plugin != null) {
           debugPrint(
             '[Bloc]   fetching ${account.serviceType.name}/${account.name} (${account.id})',
@@ -184,7 +184,7 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
         currentState.accounts.where((a) => summaries.containsKey(a.id)).map((
           account,
         ) async {
-          final plugin = _plugins[account.serviceType];
+          final plugin = plugins[account.serviceType];
           if (plugin != null) {
             final summary = await plugin.fetchNotifications(account);
             final idx = updatedAccounts.indexWhere((a) => a.id == account.id);
@@ -239,12 +239,25 @@ class NotibarBloc extends Bloc<NotibarEvent, NotibarState> {
         '[Bloc] RefreshAccount: ${account.name} (${account.serviceType.name})',
       );
 
-      final plugin = _plugins[account.serviceType];
+      final plugin = plugins[account.serviceType];
       if (plugin != null) {
         final summary = await plugin.fetchNotifications(account);
         final summaries = Map<String, NotificationSummary>.from(
           currentState.summariesByAccountId,
         );
+
+        // On network errors, keep the previous summary so the tray doesn't
+        // flash to zero while the connection is recovering (e.g. after sleep).
+        final isNetworkError = summary.error?.type == PluginErrorType.network;
+        final hasPrevious =
+            summaries.containsKey(account.id) &&
+            summaries[account.id]?.error == null;
+        if (isNetworkError && hasPrevious) {
+          debugPrint(
+            '[Bloc] Network error for ${account.name}, keeping previous summary',
+          );
+          return;
+        }
         summaries[account.id] = summary;
 
         final updatedAccounts = List<Account>.from(currentState.accounts);
