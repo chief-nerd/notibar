@@ -52,6 +52,36 @@ class JiraPlugin extends NotibarPlugin {
   ];
 
   @override
+  String? webUrl(Account account, String metricId, Map<String, String> config) {
+    final baseUrl = account.config['baseUrl']?.trim().replaceAll(RegExp(r'/$'), '');
+    if (baseUrl == null || baseUrl.isEmpty) return null;
+    final projectKey = account.config['projectKey']?.trim();
+    final projectClause = (projectKey != null && projectKey.isNotEmpty)
+        ? 'project = "$projectKey" AND '
+        : '';
+
+    switch (metricId) {
+      case 'assignedIssues':
+        final jql = Uri.encodeComponent(
+          '${projectClause}resolution = Unresolved AND assignee = currentUser() ORDER BY updated DESC',
+        );
+        return '$baseUrl/issues/?jql=$jql';
+      case 'flagged':
+        final jql = Uri.encodeComponent(
+          '${projectClause}resolution = Unresolved AND assignee = currentUser() AND priority in (Highest, High) ORDER BY updated DESC',
+        );
+        return '$baseUrl/issues/?jql=$jql';
+      case 'all':
+        final jql = Uri.encodeComponent(
+          '${projectClause}resolution = Unresolved AND assignee = currentUser() ORDER BY updated DESC',
+        );
+        return '$baseUrl/issues/?jql=$jql';
+      default:
+        return null;
+    }
+  }
+
+  @override
   StatusMenuItem formatMenuEntry(NotificationItem item) {
     var title = item.title;
     if (title.length > 60) title = '${title.substring(0, 57)}...';

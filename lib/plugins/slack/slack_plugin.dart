@@ -41,6 +41,15 @@ class SlackPlugin extends NotibarPlugin {
   ];
 
   @override
+  String? webUrl(Account account, String metricId, Map<String, String> config) {
+    final workspace = account.config['workspace']?.trim();
+    if (workspace != null && workspace.isNotEmpty) {
+      return 'https://app.slack.com/client/$workspace';
+    }
+    return 'https://app.slack.com/';
+  }
+
+  @override
   StatusMenuItem formatMenuEntry(NotificationItem item) {
     var title = item.title;
     if (title.length > 60) title = '${title.substring(0, 57)}...';

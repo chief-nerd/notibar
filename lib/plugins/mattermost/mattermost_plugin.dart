@@ -41,6 +41,16 @@ class MattermostPlugin extends NotibarPlugin {
   ];
 
   @override
+  String? webUrl(Account account, String metricId, Map<String, String> config) {
+    final baseUrl = account.config['baseUrl']?.trim().replaceAll(
+      RegExp(r'/$'),
+      '',
+    );
+    if (baseUrl == null || baseUrl.isEmpty) return null;
+    return baseUrl;
+  }
+
+  @override
   StatusMenuItem formatMenuEntry(NotificationItem item) {
     var title = item.title;
     if (title.length > 60) title = '${title.substring(0, 57)}...';

@@ -77,6 +77,14 @@ abstract class NotibarPlugin {
     int? reviewRequestsCount,
   });
 
+  /// Returns the web URL for viewing a specific metric on the service's
+  /// website, filtered appropriately. Returns null if not applicable.
+  String? webUrl(
+    Account account,
+    String metricId,
+    Map<String, String> config,
+  ) => null;
+
   /// Look up a metric definition by its ID. Returns null if not found.
   MetricDefinition? metricById(String id) =>
       supportedMetrics.where((m) => m.id == id).firstOrNull;

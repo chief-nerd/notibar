@@ -164,6 +164,26 @@ class MicrosoftPlugin extends NotibarPlugin {
   ];
 
   @override
+  String? webUrl(Account account, String metricId, Map<String, String> config) {
+    switch (metricId) {
+      case 'unread':
+        return 'https://outlook.office.com/mail/inbox';
+      case 'flagged':
+        return 'https://outlook.office.com/mail/?isFlagged=true';
+      case 'plannerAssigned':
+      case 'plannerBucket':
+      case 'plannerOpen':
+      case 'plannerInProgress':
+      case 'plannerCompleted':
+        return 'https://tasks.office.com/';
+      case 'all':
+        return 'https://outlook.office.com/mail/';
+      default:
+        return null;
+    }
+  }
+
+  @override
   StatusMenuItem formatMenuEntry(NotificationItem item) {
     final source = item.metadata['source'] as String?;
 

@@ -65,6 +65,31 @@ class GithubPlugin extends NotibarPlugin {
   ];
 
   @override
+  String? webUrl(Account account, String metricId, Map<String, String> config) {
+    final owner = account.config['owner']?.trim();
+    final repo = account.config['repo']?.trim();
+    final hasRepo =
+        owner != null && owner.isNotEmpty && repo != null && repo.isNotEmpty;
+
+    switch (metricId) {
+      case 'assignedIssues':
+        return hasRepo
+            ? 'https://github.com/$owner/$repo/issues?q=is%3Aopen+is%3Aissue+assignee%3A%40me'
+            : 'https://github.com/issues?q=is%3Aopen+is%3Aissue+assignee%3A%40me';
+      case 'assignedPRs':
+        return hasRepo
+            ? 'https://github.com/$owner/$repo/pulls?q=is%3Aopen+is%3Apr+assignee%3A%40me'
+            : 'https://github.com/pulls?q=is%3Aopen+is%3Apr+assignee%3A%40me';
+      case 'reviewRequests':
+        return hasRepo
+            ? 'https://github.com/$owner/$repo/pulls?q=is%3Aopen+is%3Apr+review-requested%3A%40me'
+            : 'https://github.com/pulls?q=is%3Aopen+is%3Apr+review-requested%3A%40me';
+      default:
+        return null;
+    }
+  }
+
+  @override
   StatusMenuItem formatMenuEntry(NotificationItem item) {
     final number = item.metadata['number'];
     var title = item.title;

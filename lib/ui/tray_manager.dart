@@ -252,6 +252,28 @@ class TrayManager {
     menuItems.add(StatusMenuItem(label: 'Refresh', hasCallback: true));
     callbacks[refreshIdx] = () => bloc.add(RefreshAccount(accountId));
 
+    // Add "Open in Browser" link if the plugin provides a web URL
+    if (plugin != null) {
+      // Look up the account and option to get metric + config
+      final state = bloc.state;
+      if (state is NotibarLoaded) {
+        final option = state.options.where((o) => o.id == itemId).firstOrNull;
+        final account = state.accounts
+            .where((a) => a.id == accountId)
+            .firstOrNull;
+        if (option != null && account != null) {
+          final url = plugin.webUrl(account, option.metric, option.config);
+          if (url != null && url.isNotEmpty) {
+            final openIdx = menuItems.length;
+            menuItems.add(
+              StatusMenuItem(label: 'Open in Browser', hasCallback: true),
+            );
+            callbacks[openIdx] = () => _launchUrl(url);
+          }
+        }
+      }
+    }
+
     _menuCallbacks[itemId] = callbacks;
     await _channel.setMenu(itemId, menuItems);
   }

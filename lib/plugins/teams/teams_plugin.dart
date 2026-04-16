@@ -44,6 +44,11 @@ class TeamsPlugin extends NotibarPlugin {
   ];
 
   @override
+  String? webUrl(Account account, String metricId, Map<String, String> config) {
+    return 'https://teams.microsoft.com/';
+  }
+
+  @override
   StatusMenuItem formatMenuEntry(NotificationItem item) {
     var title = item.title;
     if (title.length > 60) title = '${title.substring(0, 57)}...';
