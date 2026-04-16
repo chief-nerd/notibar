@@ -378,21 +378,48 @@ class MicrosoftPlugin extends NotibarPlugin {
           .where((m) => m['isRead'] != true)
           .length;
 
-      // Fetch Planner tasks if a plan is configured
-      final planId = account.config['planId'];
-      List<dynamic> plannerTasks = [];
+      // Always fetch tasks assigned to the current user (no planId needed)
+      List<dynamic> plannerTasks = await _fetchMyPlannerTasks(token);
       Map<String, String> bucketMap = {};
+
+      // Also merge in plan-specific tasks if a planId is configured
+      final planId = account.config['planId'];
       if (planId != null && planId.isNotEmpty) {
         final plannerResults = await Future.wait([
           _fetchPlannerTasks(token, planId),
           _fetchPlannerBuckets(token, planId),
         ]);
-        plannerTasks = plannerResults[0] as List<dynamic>;
+        final planTasks = plannerResults[0] as List<dynamic>;
         bucketMap = plannerResults[1] as Map<String, String>;
-        debugPrint(
-          '$_tag fetched ${plannerTasks.length} planner tasks, ${bucketMap.length} buckets (${stopwatch.elapsedMilliseconds}ms)',
-        );
+        // Deduplicate by task ID
+        final seenIds = plannerTasks
+            .map((t) => t['id'] as String? ?? '')
+            .toSet();
+        for (final t in planTasks) {
+          if (seenIds.add(t['id'] as String? ?? '')) plannerTasks.add(t);
+        }
       }
+
+      // Fetch bucket names for any plans discovered from "my tasks"
+      if (plannerTasks.isNotEmpty) {
+        final planIds = plannerTasks
+            .map((t) => t['planId'] as String?)
+            .whereType<String>()
+            .toSet();
+        if (planId != null) planIds.remove(planId); // already fetched above
+        if (planIds.isNotEmpty) {
+          final bucketResults = await Future.wait(
+            planIds.map((pid) => _fetchPlannerBuckets(token, pid)),
+          );
+          for (final bm in bucketResults) {
+            bucketMap.addAll(bm);
+          }
+        }
+      }
+
+      debugPrint(
+        '$_tag fetched ${plannerTasks.length} planner tasks, ${bucketMap.length} buckets (${stopwatch.elapsedMilliseconds}ms)',
+      );
 
       return parseSummary(
         {
@@ -728,6 +755,50 @@ class MicrosoftPlugin extends NotibarPlugin {
   }
 
   // ── Planner API ─────────────────────────────────────────────
+
+  /// Fetches all Planner tasks assigned to the current user (across all plans).
+  Future<List<dynamic>> _fetchMyPlannerTasks(String token) async {
+    try {
+      final allTasks = <dynamic>[];
+      Uri? nextUri = Uri.https(
+        'graph.microsoft.com',
+        '/v1.0/me/planner/tasks',
+        {r'$top': '100'},
+      );
+
+      while (nextUri != null) {
+        final response = await http
+            .get(
+              nextUri,
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Accept': 'application/json',
+              },
+            )
+            .timeout(const Duration(seconds: 15));
+
+        if (response.statusCode != 200) {
+          debugPrint(
+            '$_tag _fetchMyPlannerTasks failed: ${response.statusCode}',
+          );
+          return allTasks;
+        }
+
+        final data = json.decode(response.body);
+        final tasks = data['value'] as List<dynamic>? ?? [];
+        allTasks.addAll(tasks);
+
+        final nextLink = data['@odata.nextLink'] as String?;
+        nextUri = nextLink != null ? Uri.parse(nextLink) : null;
+      }
+
+      debugPrint('$_tag _fetchMyPlannerTasks OK: ${allTasks.length} tasks');
+      return allTasks;
+    } catch (e) {
+      debugPrint('$_tag _fetchMyPlannerTasks exception: $e');
+      return [];
+    }
+  }
 
   /// Fetches all tasks for the given Planner plan.
   Future<List<dynamic>> _fetchPlannerTasks(String token, String planId) async {
