@@ -34,29 +34,24 @@ class MicrosoftPlugin extends NotibarPlugin {
       label: 'Unread',
       sfSymbol: 'envelope.badge',
       materialIcon: Icons.mark_email_unread_outlined,
-      count: (s, _) => s.unreadCount,
-      filter: (s, _) => s.items.where((i) => i.isUnread).toList(),
+      filter: (s, _) => s.items
+          .where((i) => i.isUnread && i.metadata['source'] != 'planner')
+          .toList(),
     ),
     MetricDefinition(
       id: 'flagged',
       label: 'Flagged',
       sfSymbol: 'flag',
       materialIcon: Icons.flag_outlined,
-      count: (s, _) => s.flaggedCount,
-      filter: (s, _) => s.items.where((i) => i.isFlagged).toList(),
+      filter: (s, _) => s.items
+          .where((i) => i.isFlagged && i.metadata['source'] != 'planner')
+          .toList(),
     ),
     MetricDefinition(
       id: 'plannerAssigned',
       label: 'Planner: My Tasks',
       sfSymbol: 'person.badge.plus',
       materialIcon: Icons.person_outline,
-      count: (s, _) => s.items
-          .where(
-            (i) =>
-                i.metadata['source'] == 'planner' &&
-                i.metadata['status'] != 'completed',
-          )
-          .length,
       filter: (s, _) => s.items
           .where(
             (i) =>
@@ -70,17 +65,6 @@ class MicrosoftPlugin extends NotibarPlugin {
       label: 'Planner: Bucket',
       sfSymbol: 'tray.2',
       materialIcon: Icons.view_column_outlined,
-      count: (s, config) {
-        final bucketId = config['bucketId'] ?? '';
-        return s.items
-            .where(
-              (i) =>
-                  i.metadata['source'] == 'planner' &&
-                  i.metadata['status'] != 'completed' &&
-                  (bucketId.isEmpty || i.metadata['bucketId'] == bucketId),
-            )
-            .length;
-      },
       filter: (s, config) {
         final bucketId = config['bucketId'] ?? '';
         return s.items
@@ -98,13 +82,6 @@ class MicrosoftPlugin extends NotibarPlugin {
       label: 'Planner: Open',
       sfSymbol: 'paperplane.circle',
       materialIcon: Icons.radio_button_unchecked,
-      count: (s, _) => s.items
-          .where(
-            (i) =>
-                i.metadata['source'] == 'planner' &&
-                i.metadata['status'] == 'open',
-          )
-          .length,
       filter: (s, _) => s.items
           .where(
             (i) =>
@@ -118,13 +95,6 @@ class MicrosoftPlugin extends NotibarPlugin {
       label: 'Planner: In Progress',
       sfSymbol: 'arrow.trianglehead.2.clockwise.rotate.90.circle',
       materialIcon: Icons.pending_outlined,
-      count: (s, _) => s.items
-          .where(
-            (i) =>
-                i.metadata['source'] == 'planner' &&
-                i.metadata['status'] == 'inProgress',
-          )
-          .length,
       filter: (s, _) => s.items
           .where(
             (i) =>
@@ -138,13 +108,6 @@ class MicrosoftPlugin extends NotibarPlugin {
       label: 'Planner: Completed',
       sfSymbol: 'checkmark.circle',
       materialIcon: Icons.check_circle_outline,
-      count: (s, _) => s.items
-          .where(
-            (i) =>
-                i.metadata['source'] == 'planner' &&
-                i.metadata['status'] == 'completed',
-          )
-          .length,
       filter: (s, _) => s.items
           .where(
             (i) =>
@@ -158,7 +121,6 @@ class MicrosoftPlugin extends NotibarPlugin {
       label: 'All',
       sfSymbol: 'tray.full',
       materialIcon: Icons.all_inbox,
-      count: (s, _) => s.items.length,
       filter: (s, _) => s.items,
     ),
   ];

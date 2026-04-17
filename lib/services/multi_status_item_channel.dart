@@ -68,20 +68,32 @@ class MultiStatusItemChannel {
   }
 
   /// Create a new status item in the menu bar.
-  Future<void> create(String id, String title, {String? iconName}) async {
+  Future<void> create(
+    String id,
+    String title, {
+    String? iconName,
+    String? tooltip,
+  }) async {
     await _channel.invokeMethod('create', {
       'id': id,
       'title': title,
       'iconName': iconName,
+      if (tooltip != null) 'tooltip': tooltip,
     });
   }
 
   /// Update the title of an existing status item (creates if missing).
-  Future<void> update(String id, String title, {String? iconName}) async {
+  Future<void> update(
+    String id,
+    String title, {
+    String? iconName,
+    String? tooltip,
+  }) async {
     await _channel.invokeMethod('update', {
       'id': id,
       'title': title,
       'iconName': iconName,
+      if (tooltip != null) 'tooltip': tooltip,
     });
   }
 

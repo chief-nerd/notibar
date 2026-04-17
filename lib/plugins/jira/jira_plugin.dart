@@ -30,7 +30,6 @@ class JiraPlugin extends NotibarPlugin {
       label: 'Assigned Issues',
       sfSymbol: 'ticket',
       materialIcon: Icons.assignment_ind_outlined,
-      count: (s, _) => s.assignedIssuesCount,
       filter: (s, _) => s.items,
     ),
     MetricDefinition(
@@ -38,7 +37,6 @@ class JiraPlugin extends NotibarPlugin {
       label: 'Flagged',
       sfSymbol: 'flag',
       materialIcon: Icons.flag_outlined,
-      count: (s, _) => s.flaggedCount,
       filter: (s, _) => s.items.where((i) => i.isFlagged).toList(),
     ),
     MetricDefinition(
@@ -46,14 +44,16 @@ class JiraPlugin extends NotibarPlugin {
       label: 'All',
       sfSymbol: 'tray.full',
       materialIcon: Icons.all_inbox,
-      count: (s, _) => s.items.length,
       filter: (s, _) => s.items,
     ),
   ];
 
   @override
   String? webUrl(Account account, String metricId, Map<String, String> config) {
-    final baseUrl = account.config['baseUrl']?.trim().replaceAll(RegExp(r'/$'), '');
+    final baseUrl = account.config['baseUrl']?.trim().replaceAll(
+      RegExp(r'/$'),
+      '',
+    );
     if (baseUrl == null || baseUrl.isEmpty) return null;
     final projectKey = account.config['projectKey']?.trim();
     final projectClause = (projectKey != null && projectKey.isNotEmpty)

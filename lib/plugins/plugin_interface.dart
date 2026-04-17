@@ -21,11 +21,9 @@ class MetricDefinition {
   /// Material icon for the Flutter settings UI.
   final IconData materialIcon;
 
-  /// Extracts the count for this metric from a summary.
-  final int Function(NotificationSummary summary, Map<String, String> config)
-  count;
-
   /// Filters items from a summary for this metric's dropdown.
+  /// The tray badge count is always derived from this filter's length,
+  /// ensuring count and dropdown are always in sync.
   final List<NotificationItem> Function(
     NotificationSummary summary,
     Map<String, String> config,
@@ -37,7 +35,6 @@ class MetricDefinition {
     required this.label,
     required this.sfSymbol,
     required this.materialIcon,
-    required this.count,
     required this.filter,
   });
 }

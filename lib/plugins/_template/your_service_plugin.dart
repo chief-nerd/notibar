@@ -28,7 +28,6 @@ class YourServicePlugin extends NotibarPlugin {
       label: 'Unread',
       sfSymbol: 'envelope.badge',
       materialIcon: Icons.mark_email_unread_outlined,
-      count: (s, _) => s.unreadCount,
       filter: (s, _) => s.items.where((i) => i.isUnread).toList(),
     ),
     MetricDefinition(
@@ -36,7 +35,6 @@ class YourServicePlugin extends NotibarPlugin {
       label: 'Flagged',
       sfSymbol: 'flag',
       materialIcon: Icons.flag_outlined,
-      count: (s, _) => s.flaggedCount,
       filter: (s, _) => s.items.where((i) => i.isFlagged).toList(),
     ),
     MetricDefinition(
@@ -44,7 +42,6 @@ class YourServicePlugin extends NotibarPlugin {
       label: 'All',
       sfSymbol: 'tray.full',
       materialIcon: Icons.all_inbox,
-      count: (s, _) => s.items.length,
       filter: (s, _) => s.items,
     ),
   ];

@@ -48,7 +48,7 @@ class MultiStatusItemPlugin: NSObject, FlutterPlugin {
         result(FlutterError(code: "INVALID_ARGS", message: "id and title required", details: nil))
         return
       }
-      createItem(id: id, title: title, iconName: args?["iconName"] as? String)
+      createItem(id: id, title: title, iconName: args?["iconName"] as? String, tooltip: args?["tooltip"] as? String)
       result(nil)
 
     case "update":
@@ -57,7 +57,7 @@ class MultiStatusItemPlugin: NSObject, FlutterPlugin {
         result(FlutterError(code: "INVALID_ARGS", message: "id and title required", details: nil))
         return
       }
-      updateItem(id: id, title: title, iconName: args?["iconName"] as? String)
+      updateItem(id: id, title: title, iconName: args?["iconName"] as? String, tooltip: args?["tooltip"] as? String)
       result(nil)
 
     case "remove":
@@ -88,7 +88,7 @@ class MultiStatusItemPlugin: NSObject, FlutterPlugin {
 
   // MARK: - Status item management
 
-  private func createItem(id: String, title: String, iconName: String? = nil) {
+  private func createItem(id: String, title: String, iconName: String? = nil, tooltip: String? = nil) {
     NSLog("[MultiStatusItem] createItem id=\(id) title=\(title) iconName=\(iconName ?? "nil")")
     if statusItems[id] != nil { return }
 
@@ -101,47 +101,128 @@ class MultiStatusItemPlugin: NSObject, FlutterPlugin {
     statusItems[id] = item
     itemOrder.append(id)
     
-    applyItemConfig(id: id, title: title, iconName: iconName)
+    applyItemConfig(id: id, title: title, iconName: iconName, tooltip: tooltip)
   }
 
-  private func updateItem(id: String, title: String, iconName: String? = nil) {
+  private func updateItem(id: String, title: String, iconName: String? = nil, tooltip: String? = nil) {
     guard statusItems[id] != nil else {
       // Auto-create if it doesn't exist
-      createItem(id: id, title: title, iconName: iconName)
+      createItem(id: id, title: title, iconName: iconName, tooltip: tooltip)
       return
     }
-    applyItemConfig(id: id, title: title, iconName: iconName)
+    applyItemConfig(id: id, title: title, iconName: iconName, tooltip: tooltip)
   }
 
-  private func applyItemConfig(id: String, title: String, iconName: String?) {
+  // MARK: - Display style feature flag
+  // Switch between Option A (native icon + title) and Option B (icon with badge overlay).
+  private static let useOptionB = false
+
+  private func applyItemConfig(id: String, title: String, iconName: String?, tooltip: String? = nil) {
     guard let item = statusItems[id] else { return }
-    
+
+    item.button?.toolTip = tooltip
+
+    let displayTitle = title
+
+    let isNumeric = Int(title) != nil || title == "99+"
+
+    if let iconName = iconName, !iconName.isEmpty, isNumeric || title == "+", Self.useOptionB,
+       #available(macOS 11.0, *),
+       let badgedImage = makeBadgedImage(iconName: iconName, badgeText: displayTitle) {
+      // Option B: full-size icon with badge overlay — narrowest possible
+      item.button?.image = badgedImage
+      item.button?.title = ""
+      item.button?.imagePosition = .imageOnly
+      return
+    }
+
+    // Option A: native icon + number title (also used for non-numeric labels like "–", "⚠", gear)
     if let iconName = iconName, !iconName.isEmpty {
       var image: NSImage?
-      
-      // Try SF Symbol first (macOS 11+), then named image asset
       if #available(macOS 11.0, *) {
-        image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+        image = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)?
+          .withSymbolConfiguration(config)
       }
       if image == nil {
         image = NSImage(named: iconName)
+        image?.size = NSSize(width: 14, height: 14)
       }
-      
-      if let image = image {
-        image.isTemplate = true
-        image.size = NSSize(width: 16, height: 16)
-        item.button?.image = image
-        item.button?.imagePosition = title.isEmpty ? .imageOnly : .imageLeft
-        item.button?.title = title
+
+      if let src = image {
+        // 1pt left margin only — right side handled by imageHugsTitle
+        let margin: CGFloat = 1.0
+        let padded = NSImage(size: NSSize(width: src.size.width + margin, height: src.size.height), flipped: false) { _ in
+          src.draw(in: NSRect(x: margin, y: 0, width: src.size.width, height: src.size.height))
+          return true
+        }
+        padded.isTemplate = true
+        item.button?.image = padded
+        item.button?.imageHugsTitle = true   // removes built-in gap between image and title
+        item.button?.imagePosition = displayTitle.isEmpty ? .imageOnly : .imageLeft
+        // Trailing thin space adds right margin after the number
+        item.button?.title = displayTitle.isEmpty ? "" : displayTitle + "\u{2009}"
       } else {
-        // Fallback: use title only (ensures item is visible)
         item.button?.image = nil
-        item.button?.title = title.isEmpty ? "⚙" : title
+        item.button?.title = displayTitle.isEmpty ? "⚙" : displayTitle
       }
     } else {
       item.button?.image = nil
-      item.button?.title = title.isEmpty ? "?" : title
+      item.button?.title = displayTitle.isEmpty ? "?" : displayTitle
     }
+  }
+
+  /// Option B: SF Symbol fills most of the canvas; a small filled pill badge sits
+  /// in the bottom-right corner with white text. Width = icon width only (~18pt).
+  @available(macOS 11.0, *)
+  private func makeBadgedImage(iconName: String, badgeText: String) -> NSImage? {
+    // Icon configuration — full menu bar height, medium weight for clarity
+    let symConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+    guard let sfImage = NSImage(systemSymbolName: iconName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(symConfig) else { return nil }
+
+    // Number text — same color as icon, no background
+    let numFont = NSFont.monospacedDigitSystemFont(ofSize: 12.0, weight: .bold)
+    let measureAttrs: [NSAttributedString.Key: Any] = [.font: numFont]
+    let textSize = NSAttributedString(string: badgeText, attributes: measureAttrs).size()
+
+    let iconPillGap: CGFloat = 1.0
+    let iconSize = sfImage.size
+    let margin: CGFloat = 2.0
+    // Canvas = margin + icon + gap + text + margin
+    let canvasW = margin + iconSize.width + iconPillGap + textSize.width + margin
+    let canvasH: CGFloat = 16.0
+
+    let image = NSImage(size: NSSize(width: canvasW, height: canvasH), flipped: false) { _ in
+      let isDark = NSAppearance.current.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+      let fgColor: NSColor = isDark ? .white : .black
+
+      // 1. Draw number, baseline-aligned with icon bottom
+      let numX = margin + iconSize.width + iconPillGap
+      let numY: CGFloat = 0
+      let textAttrs: [NSAttributedString.Key: Any] = [
+        .font: numFont,
+        .foregroundColor: fgColor,
+      ]
+      NSAttributedString(string: badgeText, attributes: textAttrs).draw(at: NSPoint(x: numX, y: numY))
+
+      // 2. Draw SF Symbol, pinned to top of canvas
+      let iconY = canvasH - iconSize.height
+      let iconRect = NSRect(x: margin, y: iconY, width: iconSize.width, height: iconSize.height)
+      let tintedIcon = NSImage(size: iconSize, flipped: false) { _ in
+        fgColor.setFill()
+        NSRect(origin: .zero, size: iconSize).fill()
+        sfImage.draw(in: NSRect(origin: .zero, size: iconSize), from: .zero,
+                     operation: .destinationIn, fraction: 1.0)
+        return true
+      }
+      tintedIcon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+
+      return true
+    }
+
+    image.isTemplate = false
+    return image
   }
 
   private func removeItem(id: String) {

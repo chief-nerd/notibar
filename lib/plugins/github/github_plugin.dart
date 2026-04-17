@@ -30,7 +30,6 @@ class GithubPlugin extends NotibarPlugin {
       label: 'Assigned Issues',
       sfSymbol: 'ticket',
       materialIcon: Icons.assignment_ind_outlined,
-      count: (s, _) => s.assignedIssuesCount,
       filter: (s, _) =>
           s.items.where((i) => i.metadata['type'] == 'Issue').toList(),
     ),
@@ -39,7 +38,6 @@ class GithubPlugin extends NotibarPlugin {
       label: 'Assigned PRs',
       sfSymbol: 'arrow.trianglehead.pull',
       materialIcon: Icons.merge_type,
-      count: (s, _) => s.assignedPRsCount,
       filter: (s, _) => s.items
           .where(
             (i) =>
@@ -53,14 +51,26 @@ class GithubPlugin extends NotibarPlugin {
       label: 'Review Requests',
       sfSymbol: 'eye',
       materialIcon: Icons.rate_review_outlined,
-      count: (s, _) => s.reviewRequestsCount,
-      filter: (s, _) => s.items
-          .where(
-            (i) =>
-                i.metadata['type'] == 'PullRequest' &&
-                i.metadata['reason'] == 'review_requested',
-          )
-          .toList(),
+      filter: (s, _) {
+        final assignedPRKeys = s.items
+            .where(
+              (i) =>
+                  i.metadata['type'] == 'PullRequest' &&
+                  i.metadata['reason'] != 'review_requested',
+            )
+            .map((i) => '${i.metadata['repository']}#${i.metadata['number']}')
+            .toSet();
+        return s.items
+            .where(
+              (i) =>
+                  i.metadata['type'] == 'PullRequest' &&
+                  i.metadata['reason'] == 'review_requested' &&
+                  !assignedPRKeys.contains(
+                    '${i.metadata['repository']}#${i.metadata['number']}',
+                  ),
+            )
+            .toList();
+      },
     ),
   ];
 

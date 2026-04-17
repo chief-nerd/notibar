@@ -110,23 +110,25 @@ class TrayManager {
 
       final itemId = option.id;
       final icon = metricDef?.sfSymbol ?? 'tray.full';
+      final tooltip = '${account.name} — ${metricDef?.label ?? option.label}';
 
       if (summary == null) {
         newItemIds.add(itemId);
-        await _channel.update(itemId, '–', iconName: icon);
+        await _channel.update(itemId, '–', iconName: icon, tooltip: tooltip);
         debugPrint('$_tag  ${option.label}: no data yet');
         continue;
       }
 
       if (summary.error != null) {
         newItemIds.add(itemId);
-        await _channel.update(itemId, '⚠', iconName: icon);
+        await _channel.update(itemId, '⚠', iconName: icon, tooltip: tooltip);
         await _setErrorMenu(itemId, summary.error!);
         debugPrint('$_tag  ${option.label}: error — ${summary.error}');
         continue;
       }
 
-      final count = metricDef?.count(summary, option.config) ?? 0;
+      final filteredItems = metricDef?.filter(summary, option.config) ?? [];
+      final count = filteredItems.length;
       if (count == 0) {
         debugPrint('$_tag  ${option.label}: count=0, hiding');
         // Hide item if count is 0 to save space
@@ -134,10 +136,15 @@ class TrayManager {
       }
 
       newItemIds.add(itemId);
-      await _channel.update(itemId, '$count', iconName: icon);
+      final countLabel = count > 9 ? '+' : '$count';
+      await _channel.update(
+        itemId,
+        countLabel,
+        iconName: icon,
+        tooltip: tooltip,
+      );
 
       // Build dropdown menu with notification items.
-      final filteredItems = metricDef?.filter(summary, option.config) ?? [];
       await _setOptionMenu(itemId, option.accountId, filteredItems, plugin);
       debugPrint(
         '$_tag  ${option.label}: $icon $count (${filteredItems.length} menu items)',

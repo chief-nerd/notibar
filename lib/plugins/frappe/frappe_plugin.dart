@@ -27,7 +27,6 @@ class FrappePlugin extends NotibarPlugin {
       label: 'Unread',
       sfSymbol: 'envelope.badge',
       materialIcon: Icons.mark_email_unread_outlined,
-      count: (s, _) => s.unreadCount,
       filter: (s, _) => s.items.where((i) => i.isUnread).toList(),
     ),
     MetricDefinition(
@@ -35,14 +34,16 @@ class FrappePlugin extends NotibarPlugin {
       label: 'Flagged',
       sfSymbol: 'flag',
       materialIcon: Icons.flag_outlined,
-      count: (s, _) => s.flaggedCount,
       filter: (s, _) => s.items.where((i) => i.isFlagged).toList(),
     ),
   ];
 
   @override
   String? webUrl(Account account, String metricId, Map<String, String> config) {
-    final baseUrl = account.config['baseUrl']?.trim().replaceAll(RegExp(r'/$'), '');
+    final baseUrl = account.config['baseUrl']?.trim().replaceAll(
+      RegExp(r'/$'),
+      '',
+    );
     if (baseUrl == null || baseUrl.isEmpty) return null;
     return '$baseUrl/app/todo';
   }
