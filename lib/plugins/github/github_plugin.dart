@@ -183,7 +183,9 @@ class GithubPlugin extends NotibarPlugin {
           headers: headers,
         ),
         http.get(
-          Uri.parse('${searchBase}is:pr+review-requested:$encodedUser'),
+          Uri.parse(
+            '${searchBase}is:pr+review-requested:$encodedUser+-reviewed-by:$encodedUser',
+          ),
           headers: headers,
         ),
       ]).timeout(const Duration(seconds: 15));
